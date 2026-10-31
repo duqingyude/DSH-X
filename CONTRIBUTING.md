@@ -13,14 +13,14 @@ DSH-X 是 **DeepSeek Harness 的第三方启动器**：管版本安装、启动�
 ## 动手前
 
 ```bash
-npm install          # 只有打安装包才需要（electron / electron-builder）
+npm install          # 只有打安装包才需要（打包脚本用的工具）
 npm start            # 起管理页，开发入口
-npm test             # 全部用例，约 80 秒
+npm test             # 全部用例，约 3 分钟
 ```
 
 - **跑测试别接管道**：`npm test | head` 会把输出缓冲成 0 字节，等于白跑。要留证据就重定向到文件。
 - 源码运行不需要构建步骤，改完重启即可。没有 lint / 格式化配置，也**别加**。
-- 想用 Electron 外壳从源码起：`npm install` 之后 `npm run electron`。
+- 原生外壳用 Rust 写：`npm run shell`（cargo 编译并运行 `shell-rs/`），需要先装 Rust 工具链。
 
 ## 代码规矩
 

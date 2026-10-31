@@ -14,21 +14,18 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/yyh-001/DSH-X/releases">
-    <img src="https://img.shields.io/github/v/release/yyh-001/DSH-X?label=Release&color=4D6BFE" alt="Release" />
-  </a>
-  <a href="https://www.npmjs.com/package/@yyh001/dsh-x">
-    <img src="https://img.shields.io/npm/v/%40yyh001%2Fdsh-x?label=npm&color=4D6BFE" alt="npm" />
+  <a href="https://github.com/duqingyude/DSH-X/releases">
+    <img src="https://img.shields.io/github/v/release/duqingyude/DSH-X?label=Release&color=4D6BFE" alt="Release" />
   </a>
   <img src="https://img.shields.io/badge/license-MIT-4D6BFE" alt="License" />
   <br>
-  <img src="https://img.shields.io/github/downloads/yyh-001/DSH-X/total?label=downloads&color=4D6BFE" alt="Downloads" />
-  <img src="https://img.shields.io/github/stars/yyh-001/DSH-X?label=stars&color=4D6BFE" alt="Stars" />
-  <img src="https://img.shields.io/github/contributors/yyh-001/DSH-X?label=contributors&color=4D6BFE" alt="Contributors" />
+  <img src="https://img.shields.io/github/downloads/duqingyude/DSH-X/total?label=downloads&color=4D6BFE" alt="Downloads" />
+  <img src="https://img.shields.io/github/stars/duqingyude/DSH-X?label=stars&color=4D6BFE" alt="Stars" />
+  <img src="https://img.shields.io/github/contributors/duqingyude/DSH-X?label=contributors&color=4D6BFE" alt="Contributors" />
 </p>
 
 <p align="center">
-  <samp><a href="https://yyh-001.github.io/DSH-X/">Website</a> · <a href="https://github.com/yyh-001/DSH-X/releases/latest">Download</a> · <a href="docs/releases">Changelog</a> · <a href="CONTRIBUTING.en.md">Contributing</a> · <strong>English</strong> · <a href="README.md">中文</a></samp>
+  <samp><a href="https://duqingyude.github.io/DSH-X/">Website</a> · <a href="https://github.com/duqingyude/DSH-X/releases/latest">Download</a> · <a href="docs/releases">Changelog</a> · <a href="CONTRIBUTING.en.md">Contributing</a> · <strong>English</strong> · <a href="README.md">中文</a></samp>
 </p>
 
 > [!IMPORTANT]
@@ -41,7 +38,7 @@
 - 📦 **Version management** — a dedicated manager for detecting new releases, manually installing, removing and assigning versions to launch entries.
 - 🧩 **Plugins and packs** — install, toggle and update plugins by environment and configure default indexes for the official custom plugin market; browse, search and sort the masonry-style community market, or import and export packs.
 - 🛠️ **MCP and skills** — configure MCP servers and import, manage and toggle skills.
-- 🪟 **Opening modes** — tabs inside DSH-X, a system browser tab, a standalone browser window or a desktop window.
+- 🪟 **Two opening modes** — a system browser tab, or a standalone browser window without an address bar.
 - 🎨 **Appearance** — light / dark themes, transparency, opening and launch-entry animations, and separate background and Big Fish switches.
 - 🔄 **Updates and recovery** — self-update, profile recovery and configurable old-version retention; each launch entry's current and previous versions are kept additionally.
 - ⚙️ **Desktop system switches** — hardware acceleration, automatic update download (install manually), task notifications and sound, hide to tray on close, and keep-awake.
@@ -49,17 +46,17 @@
 
 ## Getting started
 
-Download the installer for your platform from [Releases](https://github.com/yyh-001/DSH-X/releases/latest):
+Download the installer for your platform from [Releases](https://github.com/duqingyude/DSH-X/releases/latest):
 
 | Platform | Requirements | Installer |
 | --- | --- | --- |
-| Windows | Windows 10 or later, x64 | `DSH-Setup-<version>.exe` (NSIS) |
-| macOS | macOS 13 or later | `DSH-X-<version>-arm64.dmg` (Apple Silicon) / `DSH-X-<version>-x64.dmg` (Intel) |
-| Linux | x64; AppImage needs FUSE | `DSH-X-<version>-x86_64.AppImage` / `DSH-X-<version>-amd64.deb` |
+| Windows | Windows 10 or later, x64 | `dsh-x_<version>_x64-setup.exe` (NSIS, per-user) |
+| macOS | macOS 13 or later | `dsh-x_<version>_aarch64.dmg` (Apple Silicon) / `dsh-x_<version>_x64.dmg` (Intel) |
+| Linux | x64; AppImage needs FUSE | `dsh-x_<version>_amd64.AppImage` / `dsh-x_<version>_amd64.deb` |
 
 ### Windows
 
-Download `DSH-Setup-<version>.exe`, install it and open **DSH-X** from the desktop. The installer has no Authenticode signature, so SmartScreen may show an "unknown publisher" prompt — see [Signing and antivirus false positives](#signing-and-antivirus-false-positives).
+Download `dsh-x_<version>_x64-setup.exe`, install it and open **DSH-X** from the desktop. The installer has no Authenticode signature, so SmartScreen may show an "unknown publisher" prompt — see [Signing and antivirus false positives](#signing-and-antivirus-false-positives).
 
 ### macOS
 
@@ -69,34 +66,34 @@ Open the dmg and drag **DSH-X** into Applications. The package is ad-hoc signed 
 xattr -dr com.apple.quarantine /Applications/DSH-X.app
 ```
 
-Shell auto-update is currently unavailable, while core updates still come from npm.
+Shell auto-update is currently unavailable, while core updates still come from npm. Uninstall the old Electron build first; the two cannot coexist.
 
 ### Linux
 
-Download `DSH-X-<version>-x86_64.AppImage`, `chmod +x` it and run it. If FUSE is unavailable, use `./DSH-X-<version>-x86_64.AppImage --appimage-extract-and-run`.
+Download `dsh-x_<version>_amd64.AppImage`, `chmod +x` it and run it. If FUSE is unavailable, use `./dsh-x_<version>_amd64.AppImage --appimage-extract-and-run`.
 
 On Debian / Ubuntu you can also install the deb: it lands in `/opt/DSH-X`, adds a menu entry and uninstalls with `apt remove dsh-x`, but **the deb build has no shell auto-update** — grab the new installer from the releases page:
 
 ```sh
-sudo apt install ./DSH-X-<version>-amd64.deb
+sudo apt install ./dsh-x_<version>_amd64.deb
 ```
 
-Settings live in `~/.config/DSH` and the core cache in `~/.cache/dsh-x`; core updates use npm for both packages.
+Settings live in `~/.config/DSH`; core updates use npm for both packages.
 
 ### Verifying a download
 
 The releases page lists a sha256 next to every file — compare it locally:
 
 ```sh
-certutil -hashfile DSH-Setup-<version>.exe SHA256        # Windows
-shasum -a 256 DSH-X-<version>-arm64.dmg                  # macOS
-sha256sum DSH-X-<version>-x86_64.AppImage                # Linux
+certutil -hashfile dsh-x_<version>_x64-setup.exe SHA256 # Windows
+shasum -a 256 dsh-x_<version>_aarch64.dmg              # macOS
+sha256sum dsh-x_<version>_amd64.AppImage               # Linux
 ```
 
 ## Usage
 
 - Add or edit a launch entry on the home page, select its environment and version, then start it. Open **Version management** from the launch-entry editor to manually install or remove versions.
-- Settings → General → **How dsh opens** offers internal tabs, a browser or a separate window. Internal tabs require the installed desktop app.
+- Settings → General → **How dsh opens** offers the system browser or a browser app window (no address bar). The old "desktop window" mode has no implementation any more and falls back to the system browser.
 - The manager defaults to port `3780` and tries the next port if occupied.
 - To reach dsh from another device: Settings → Advanced → **Web binding** → LAN, applied on the next start.
 
@@ -172,12 +169,6 @@ sha256sum DSH-X-<version>-x86_64.AppImage                # Linux
 
 </details>
 
-**Multiple tabs · Dark theme**
-
-<p align="center">
-  <img src="docs/screenshot-tabs.png" alt="DSH-X v0.1.16 with multiple tabs" width="820" />
-</p>
-
 ## Modpacks
 
 Packs install a group of plugins and configuration into a selected environment (profile). The Plugins page lists environments, identifies installed packs and lets you toggle individual plugins. Packs use the [DSH-PackForge](https://github.com/DSH-PackForge/DSH-PackForge) `.dspack` format (manifest v5, older versions accepted).
@@ -203,7 +194,7 @@ A companion Wallpaper Engine wallpaper — [DSH-X · 大肥鱼桌面终端](http
 
 ## Signing and antivirus false positives
 
-The release-manifest signature verifies file integrity and is separate from Windows publisher signing. `DSH-Setup-<version>.exe` and the legacy `DSH-Setup.exe` bridge for the 0.1.18 updater currently have no Authenticode signature, so SmartScreen may show an "unknown publisher" prompt. Report antivirus false positives by submitting the installer to [Microsoft](https://www.microsoft.com/en-us/wdsi/filesubmission) or the relevant antivirus vendor.
+The release-manifest signature verifies file integrity and is separate from Windows publisher signing. The current Windows installer has no Authenticode signature, so SmartScreen may show an "unknown publisher" prompt. Report antivirus false positives by submitting the installer to [Microsoft](https://www.microsoft.com/en-us/wdsi/filesubmission) or the relevant antivirus vendor.
 
 ## Notes
 
@@ -215,18 +206,18 @@ The release-manifest signature verifies file integrity and is separate from Wind
 
 ## Development
 
-Needs Node.js 22.18+ locally. The launcher itself has no third-party dependencies: `npm start` runs the manager, `npm run server` the server only, and `npm test` the tests. The shell is Electron, so run `npm install` first for `npm run electron` or an installer build.
+Needs Node.js 22.18+ locally (22 and 24 both work) and the Rust toolchain when building the shell. The launcher has no third-party runtime dependencies: `npm start` runs the manager, `npm run server` the server only, `npm test` the tests and `npm run shell` compiles and runs the native shell.
 
 Development, commit and release conventions: [CONTRIBUTING.en.md](CONTRIBUTING.en.md).
 
 ### Packaging
 
 ```sh
-npm install
+cargo install cargo-packager --locked
 npm run dist
 ```
 
-Windows produces `release/eb/DSH-Setup-<version>.exe` (NSIS) plus the legacy `release/eb/DSH-Setup.exe` bridge for the 0.1.18 updater; macOS produces `release/eb/DSH-X-<version>-<arch>.dmg`; Linux produces `release/eb/DSH-X-<version>-x86_64.AppImage`. Installers are built with electron-builder; Rust / Inno Setup are no longer required.
+Artifacts land in `release/packager/`: an NSIS installer on Windows, a dmg on macOS, AppImage and deb on Linux. cargo-packager builds them and ships the core under `core/`; publishing identity (appId, update source, core package) comes from `fork.json`.
 
 Builds also write an SBOM and release manifest for local checking (not uploaded to the release). Check the version and artifacts before publishing:
 
@@ -235,7 +226,7 @@ node scripts/release-manifest.mjs check-tag v0.1.22
 node scripts/release-manifest.mjs verify
 ```
 
-The GitHub Actions `build` workflow builds Windows / macOS / Linux installers and publishes the npm core package and CLI on tags. macOS currently ships dmg only (ad-hoc signing; shell auto-update is disabled); Linux uses AppImage + `latest-linux.yml`.
+The GitHub Actions `build` workflow builds Windows / macOS / Linux installers and publishes the npm core package on tags. macOS currently ships dmg only (ad-hoc signing; shell auto-update is disabled).
 
 The release-manifest private key lives in `release/release-key.pem` (git-ignored, **back it up**).
 
@@ -255,3 +246,4 @@ The release-manifest private key lives in `release/release-key.pem` (git-ignored
 ## License
 
 [MIT](LICENSE) © 2026 yyh
+

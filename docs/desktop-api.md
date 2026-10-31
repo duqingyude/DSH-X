@@ -1,12 +1,12 @@
 # 插件桌面 API（`/api/desktop`）
 
-DSH-X 的 Electron 外壳把几个桌面能力借给 dsh 插件：系统原生通知、系统对话框、剪贴板、
+DSH-X 的原生外壳（`shell-rs/`）把几个桌面能力借给 dsh 插件：系统原生通知、系统对话框、剪贴板、
 打开链接、在文件管理器中定位文件。
 
-插件跑在 dsh 子进程里，拿不到 Electron；所以链路是：
+插件跑在 dsh 子进程里，拿不到外层进程；所以链路是：
 
 ```
-插件（dsh 子进程） --本机 HTTP--> 管理服务（server.js） --函数调用--> 外壳（host.desktop） --> Electron
+插件（dsh 子进程） --本机 HTTP--> 管理服务（server.js） --host.desktop--> host-remote.js --本机 HTTP--> 外壳（bridge.rs） --> 系统
 ```
 
 只有**由 DSH-X 启动**的 dsh 实例才有这条路。用户自己 `dsh` 起来的环境里没有这些环境变量，
@@ -35,7 +35,7 @@ GET /api/desktop
   "capabilities": ["notify", "open", "reveal", "clipboard", "dialog"],
   "notifications": { "enabled": true, "sound": true },
   "theme": "dark",
-  "versions": { "core": "0.1.22", "shell": "0.1.22", "electron": "44.7.0" }
+  "versions": { "core": "0.1.22", "shell": "0.1.22", "node": "22.19.0" }
 }
 ```
 
@@ -61,8 +61,8 @@ POST /api/desktop/notify
 ```
 
 - `title` 最多 120 字、`body` 最多 800 字；两个都空返回 400。
-- `url` 只认 `http(s)`，点击通知时按外壳的打开方式处理：指向正在运行的 dsh 实例的地址进
-  内部标签页 / 独立窗口，其他本机地址和外部地址交给系统浏览器。不传则点击回到管理页。
+- `url` 只认 `http(s)`，点击通知时按设置里的打开方式处理：指向正在运行的 dsh 实例的地址
+  在浏览器里打开（系统标签页或应用窗口），其他本机地址和外部地址也交给系统浏览器。不传则点击回到管理页。
 - `silent: true` 只是把这条通知关小声；用户关掉「通知声音」时插件不能把它打开。
 - 500ms 内重复请求会被节流（`reason: "throttled"`），别拿通知当日志。
 
@@ -73,8 +73,8 @@ POST /api/desktop/open
 { "url": "https://example.com/docs" }
 ```
 
-本机地址（`127.0.0.1` / `localhost` / `[::1]`）里，属于正在运行的 dsh 实例的按设置进标签页或
-独立窗口；其余（包括其他本机服务）和外部地址一样交给系统浏览器。`file:`、`javascript:`、
+本机地址（`127.0.0.1` / `localhost` / `[::1]`）里，属于正在运行的 dsh 实例的按设置进系统浏览器
+（标签页或应用窗口）；其余（包括其他本机服务）和外部地址一样交给系统浏览器。`file:`、`javascript:`、
 `data:` 一律 400。
 
 ### 在文件管理器中显示

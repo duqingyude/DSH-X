@@ -13,14 +13,14 @@ It does **not** rewrite dsh's web UI. Anything about how the DSH page looks belo
 ## Before you start
 
 ```bash
-npm install          # packaging only (electron / electron-builder)
+npm install          # packaging only (tools used by the packaging script)
 npm start            # start the manager page — the dev entry point
-npm test             # full suite, ~80s
+npm test             # full suite, ~3 min
 ```
 
 - **Never pipe the test output** (`npm test | head` buffers it to 0 bytes and the run is wasted). Redirect to a file if you need evidence.
 - Running from source needs no build step; change a file and restart. There is no lint/format config, and we don't want one.
-- To start the Electron shell from source: `npm install`, then `npm run electron`.
+- The native shell is Rust: `npm run shell` (cargo builds and runs `shell-rs/`); install the Rust toolchain first.
 
 ## Code rules
 
