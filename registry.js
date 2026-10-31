@@ -8,7 +8,7 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import { DEFAULTS, DOWNLOAD_SOURCES, loadSettingsSync } from './settings.js'
-import { IN_ELECTRON, IS_WINDOWS, RUNTIME_NODE, RUNTIME_NODE_ENV } from './platform.js'
+import { IS_WINDOWS, RUNTIME_NODE } from './platform.js'
 // 版本列表、tarball 都走带代理的 fetch（见 proxy.js）；回环地址它自动直连
 import { netFetch, proxyEnv } from './proxy.js'
 // 版本比较在 version.js（零依赖），这里转出去保持老调用方不用改
@@ -32,7 +32,7 @@ const USER_AGENT = `dsh-x/${pkg.version || '0.0.0'}`
 let npmReady = null
 
 // npm/npx 的 Windows 包装。`node` 落在哪儿随安装方式变：源码运行就是系统 node；打包后
-// node/ 下只有 node.cmd（转调 Electron，见 scripts/pack.mjs），所以按文件名依次找。
+// node/ 下只有 node.cmd（转调 DSH_RUNTIME_NODE，见 scripts/pack-rs.mjs），所以按文件名依次找。
 const NPM_CMD = `@ECHO OFF
 SETLOCAL
 SET "NODE_EXE=%~dp0\\node.cmd"
@@ -251,7 +251,7 @@ export function describeNpmFailure(text) {
  * 根本没有 node，装到一半就死在 `'node' 不是内部或外部命令`（0.2.1-rc.5 起 koffi 带
  * 这条脚本，干净的 Windows 上必挂）。
  *
- * 补的是打包时的 node/ 目录（node.cmd 转调 Electron 本体按 node 跑）；源码运行没有这个
+ * 补的是打包时的 node/ 目录（node.cmd 转调系统里找到的 Node）；源码运行没有这个
  * 目录，就退回跑我们的那个 node 所在的目录。**追加到末尾**：自己装了 Node 的机器行为和
  * 以前一模一样，自带运行时只当兜底 —— 和 dsh 子进程的 PATH 排序一致（server.js
  * orderRuntimePaths），用户的工具链仍排在前面。
@@ -260,16 +260,15 @@ export function withRuntimeNode(pathValue, options = {}) {
   const {
     dir = LOCAL_NODE,
     runtime = RUNTIME_NODE,
-    inElectron = IN_ELECTRON,
     sep = delimiter,
     exists = existsSync,
   } = options
-  // Electron 本体所在目录里没有 node.exe，只有 node/ 那个包装目录能当兜底。
-  // node.exe 是 0.1.19 及以前安装包的布局，和 platform.js runtimeNode() 同一个判断。
+  // 打包版核心的 node/ 里只有 npm / pnpm 的包装（没有 node 本体），用它当兜底；
+  // 源码运行时没有这个目录，就退回正在跑我们的那个 node 所在的目录。
   const bundled = IS_WINDOWS
     ? exists(join(dir, 'node.cmd')) || exists(join(dir, 'node.exe'))
     : exists(join(dir, 'node'))
-  const fallback = bundled ? dir : inElectron ? '' : dirname(runtime)
+  const fallback = bundled ? dir : dirname(runtime)
   const parts = String(pathValue || '').split(sep).filter(Boolean)
   if (!fallback || parts.includes(fallback)) return pathValue
   return [...parts, fallback].join(sep)
@@ -281,12 +280,8 @@ function runNpm(cli, args, { cwd, onLog, env } = {}) {
       cwd,
       env: {
         ...process.env,
-        ...RUNTIME_NODE_ENV,
         // 生命周期脚本里的裸 `node` 只在 PATH 里找，见 withRuntimeNode
         PATH: withRuntimeNode(process.env.PATH),
-        // node.cmd 转调 Electron 时认它。外壳早就设过（shell/main.mjs），这里再兜一次：
-        // 核心自更新到用户目录后 node/ 就在 data 下，node.cmd 猜不中 DSH.exe 的位置。
-        ...(IN_ELECTRON ? { DSH_ELECTRON_BIN: process.execPath } : {}),
         npm_config_registry: currentRegistry(),
         ...proxyEnv(),
         npm_config_audit: 'false',

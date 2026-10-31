@@ -1,0 +1,10 @@
+{
+  "appId": "io.github.duqingyude.dsh-x",
+  "productName": "DSH-X",
+  "upstreamAppId": "io.github.yyh-001.dsh-x",
+  "updateOwner": "duqingyude",
+  "updateRepo": "DSH-X",
+  "corePackage": "@duqingyude/dsh-x-core",
+  "dataDir": "DSH",
+  "tagPrefix": "v"
+}

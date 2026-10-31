@@ -1,9 +1,9 @@
 // 核心的 npm 分发：查 registry 的 dist-tags → 下载 tarball → 校验 → 解压。
 //
-// 安装包只负责外壳和 Electron；核心作为一个 npm 包独立发版，启动器在运行时从 registry
+// 安装包只负责原生外壳；核心作为一个 npm 包独立发版，启动器在运行时从 registry
 // 取新版本，解到暂存目录后仍走 apply-update.mjs 换核心目录。
 // 核心包跨平台（三套 filemanager 和 node 包装都在里面），Windows / mac / Linux 用同一个
-// dsh-x-core；只有外壳/Electron 按平台分开。
+// 核心包；只有外壳按平台分开。
 // 完整性用 npm 的 dist.integrity（sha512）校验；registry 走设置里的下载源（官方/镜像）。
 
 import { spawnSync } from 'node:child_process'
@@ -12,10 +12,11 @@ import { chmodSync, createWriteStream, existsSync, mkdirSync, readFileSync, read
 import { join } from 'node:path'
 
 import { netFetch } from './proxy.js'
+import { FORK } from './fork.js'
 import { cmpVer, parseVer, VERSION_CHANNEL } from './version.js'
 
-/** 核心包跨平台：Windows / mac / Linux 共用同一个 dsh-x-core。 */
-export const CORE_PACKAGE = String(process.env.DSH_CORE_PACKAGE || 'dsh-x-core').trim()
+/** 核心包跨平台：Windows / mac / Linux 共用同一个核心包；包名来自 fork.json，不能和上游同名（会互相覆盖，方案 §11.8）。 */
+export const CORE_PACKAGE = String(process.env.DSH_CORE_PACKAGE || FORK.corePackage).trim()
 
 export const CORE_REGISTRIES = {
   official: 'https://registry.npmjs.org',
@@ -59,8 +60,9 @@ export function resolveCoreRelease(metadata, channel = VERSION_CHANNEL.OFFICIAL)
     integrity: String(dist.integrity || ''),
     shasum: String(dist.shasum || ''),
     unpackedSize: Number(dist.unpackedSize) || 0,
-    // 发布脚本写进核心 package.json：这份核心是按哪个 Electron 版本构建/验证的
-    electron: String(info.dshX?.electron || ''),
+    // 发布脚本写进核心 package.json：这份核心要求的最低外壳版本（旧包写的是 dshX.electron，
+    // 换 Rust 外壳后这两个字段不能混用：外壳版本号与 Electron 版本号毫无关系）。
+    shell: String(info.dshX?.shell || ''),
   }
 }
 

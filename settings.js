@@ -91,9 +91,9 @@ export function updateSourceForDownload(value) {
 }
 
 /**
- * 跑 dsh 用哪个 node：bundled = 启动器自带（打包后是 Electron 内嵌的 Node），
- * system = 用户机器上装的那个。只影响 dsh 子进程，启动器自己始终跑在 Electron 里。
- * 换档要重启启动器：platform.js 在加载时就把 RUNTIME_NODE 定成了常量。
+ * 跑 dsh 用哪个 node。Rust 外壳时代只有系统 node 一条路（外壳找到后通过
+ * DSH_RUNTIME_NODE 传进来），这两个值只为兼容旧 settings.json 保留，页面里也不可改。
+ * RUNTIME_NODE 在 platform.js 加载时就定了，换 node 要重启启动器。
  */
 export const NODE_RUNTIMES = ['bundled', 'system']
 export const DEFAULT_NODE_RUNTIME = 'bundled'
@@ -176,12 +176,10 @@ export function safeProxyUrl(value) {
  *   经过浏览器进程——关窗口、托盘、退出都由启动器自己说了算。它只在原生外壳托管下成立
  *   （外壳设了 DSH_APP_WINDOW=1，并在 stdout 上收约定标记），源码运行（npm start）时选它
  *   会安静地退回标签页，不会开出一个没人管的窗口。
- * - internal（默认）：在启动器主窗口的原生标签页里打开，每个实例保留自己的页面；需要新版外壳
- *   报告 DSH_INTERNAL_TABS=1，旧外壳与源码运行时退回系统浏览器。
  */
-// internal 保留在主窗口的标签页中；与另开一个桌面窗口的 window 分开，旧设置仍按原义打开。
-export const OPEN_MODES = ['tab', 'app', 'window', 'internal']
-export const DEFAULT_OPEN_MODE = 'internal'
+// internal 随 Electron 外壳一起撤了：没有原生标签页可装，旧设置里的 internal 会回落到 tab。
+export const OPEN_MODES = ['tab', 'app', 'window']
+export const DEFAULT_OPEN_MODE = 'tab'
 
 export function safeOpenMode(value) {
   const name = String(value ?? '').trim()
@@ -269,7 +267,7 @@ export const DEFAULTS = {
   reduceMotion: false,
   hideBackground: false,
   hideBigFish: false,
-  // ---- 桌面端系统开关（Electron 外壳直接读 settings.json，见 shell/prefs.mjs）----
+  // ---- 桌面端系统开关（原生外壳直接读 settings.json，见 shell-rs/src/prefs.rs）----
   // Chromium 硬件加速：关闭能规避显卡/驱动导致的白屏与闪退，代价是动画更吃 CPU，重启生效
   hardwareAcceleration: true,
   // 发现更新就自动下载；没有 dsh 实例在跑时直接装上并重启

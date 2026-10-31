@@ -1,11 +1,12 @@
-// 核心增量更新的落地助手：由即将退出的外壳用 ELECTRON_RUN_AS_NODE 拉起。
+// 核心增量更新的落地助手：由即将退出的核心进程用 RUNTIME_NODE 拉起。
 //
-// 流程：等父进程退出 → 备份旧核心目录 → 换上新解压好的暂存目录 → 重启外壳 →
+// 流程：等核心与外壳双双退出 → 备份旧核心目录 → 换上新解压好的暂存目录 → 重启外壳 →
 // 等新版本写出启动标记；没等到就回滚到备份再重启。所有结果写进 update.log。
 //
-// 只替换核心目录（安装包的 resources/core 或用户目录的 core/current），不碰 DSH.exe 和
-// Electron 运行时（所以不受文件锁影响）。参数全部走命令行；这里只依赖 Node 内置模块，
-// 脚本可以放在临时目录里跑。
+// 只替换核心目录（安装包的 resources/core 或用户目录的 core/current），不碰外壳可执行文件。
+// 等两个进程都退出很重要：Rust 外壳的 supervisor 会在核心退出后 800ms 自动重启，
+// 只等核心退出就换目录，会和重启抢同一批文件（Windows 上直接 EBUSY）。
+// 参数全部走命令行；这里只依赖 Node 内置模块，脚本可以放在临时目录里跑。
 
 import { appendFileSync, cpSync, existsSync, renameSync, rmSync } from 'node:fs'
 import { spawn } from 'node:child_process'
@@ -20,6 +21,7 @@ const appDir = argValue('--app')
 const stagedDir = argValue('--staged')
 const exePath = argValue('--exe')
 const parentPid = Number(argValue('--pid') || 0)
+const shellPid = Number(argValue('--shell-pid') || 0)
 const backupDir = argValue('--backup')
 const marker = argValue('--marker')
 const logFile = argValue('--log')
@@ -53,8 +55,8 @@ function alive(pid) {
 
 function relaunch() {
   try {
-    // 助手自己是 ELECTRON_RUN_AS_NODE 跑起来的；这个变量不能带给启动器，
-    // 否则 DSH.exe 会按 Node 跑 shell/main.mjs，Electron API 全没有，起来就退。
+    // 助手是普通 node 跑起来的；旧 Electron 外壳时代留下的 ELECTRON_RUN_AS_NODE
+    // 不能带给启动器，否则 Electron 会按 Node 跑主进程、起来就退。
     const env = { ...process.env }
     delete env.ELECTRON_RUN_AS_NODE
     const child = spawn(exePath, [], { cwd: dirname(exePath), env, detached: true, stdio: 'ignore', windowsHide: false })
@@ -106,10 +108,10 @@ async function main() {
     log('参数不完整，放弃更新')
     return 1
   }
-  log(`等待父进程 ${parentPid} 退出…`)
-  const exited = await waitFor(() => !alive(parentPid), 90_000)
+  log(`等待核心 ${parentPid} 与外壳 ${shellPid || '（未上报）'} 退出…`)
+  const exited = await waitFor(() => !alive(parentPid) && !alive(shellPid), 90_000)
   if (!exited) {
-    log('父进程 90 秒内没有退出，放弃更新（暂存目录保留，下次可重试）')
+    log('90 秒内没有全部退出，放弃更新（暂存目录保留，下次可重试）')
     return 1
   }
   try { rmSync(marker, { force: true }) } catch { /* 没有就算了 */ }

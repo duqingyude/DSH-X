@@ -87,7 +87,7 @@ export class FileManager {
   /** 登录自启要执行的 argv：装好的走原生外壳，源码运行就直接 node start.js。 */
   launchArgs() {
     const exe = this.launcherExecutable()
-    // 源码运行时直接 node start.js；Electron 外壳里 RUNTIME_NODE 就是 Electron 本体
+    // 源码运行时直接 node start.js；打包后 RUNTIME_NODE 是外壳找到的系统 node
     return exe ? [exe] : [RUNTIME_NODE, join(this.root, 'start.js')]
   }
 

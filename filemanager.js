@@ -6,7 +6,7 @@ import { FileManager, PosixFileManager } from './filemanager-base.js'
  *
  * 三套实现都随核心包发（核心 npm 包是跨平台的，见 scripts/pack-common.mjs 的
  * FILE_MANAGERS）；运行时用动态 import 只加载当前平台那一套。这样同一个 dsh-x-core
- * 在 Windows / mac / Linux 上都能用，只有外壳/Electron 按平台分开。
+ * 在 Windows / mac / Linux 上都能用；只有外壳是各平台各出一个安装包。
  *
  * 契约、基类和 Linux 的兜底实现都在 filemanager-base.js：实现类静态 import 的是它，
  * 不是本文件——本文件有顶层 await，实现类再回头 import 它就会死锁。

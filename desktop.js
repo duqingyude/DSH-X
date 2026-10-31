@@ -5,16 +5,16 @@
  * host.desktop（见 shell/main.mjs）。这个文件只决定「什么请求能过去、长度上限多少」，
  * 真正执行 Notification / dialog / clipboard 的代码在外壳里。
  *
- * 不许 import Electron，也不许 import shell/：核心和外壳是分开更新的两层，核心目录
- * （resources/core 或用户目录 core/current）里没有 shell/，外壳目录里也没有核心模块。
- * 外壳侧另有 shell/desktop.mjs 做它自己的门控（通知开关、节流、Electron 对话框选项）。
+ * 不许 import 外壳代码：核心和外壳是分开更新的两层，核心目录（resources/core 或
+ * 用户目录 core/current）里没有 shell-rs/，外壳目录里也没有核心模块。
+ * 外壳侧另有 shell-rs/src/bridge.rs 做它自己的门控（通知开关、节流、系统对话框选项）。
  */
 import { isAbsolute } from 'node:path'
 
 /** 协议版本：插件可以按 GET /api/desktop 的 api 字段决定用哪套接口。 */
 export const DESKTOP_API_VERSION = 1
 
-/** 外壳能做的事。没有 Electron 外壳时 GET 会返回空数组。 */
+/** 外壳能做的事。没有原生外壳（浏览器里打开管理页）时 GET 会返回空数组。 */
 export const DESKTOP_CAPABILITIES = Object.freeze(['notify', 'open', 'reveal', 'clipboard', 'dialog'])
 
 /**
@@ -74,7 +74,7 @@ function httpUrl(value) {
   }
 }
 
-/** Electron 对话框的筛选器：扩展名不带点、只留字母数字和 `*`（全部文件）。 */
+/** 系统文件对话框的筛选器：扩展名不带点、只留字母数字和 `*`（全部文件）。 */
 function fileFilters(value) {
   if (!Array.isArray(value)) return []
   const filters = []
@@ -174,7 +174,7 @@ function parseDialog(input) {
     if (input.multiple === true) properties.push('multiSelections')
     options.properties = properties
   }
-  // 目录选择不吃筛选器；Electron 传了也会忽略，干脆不传。
+  // 目录选择不吃筛选器；外壳那边传了也会忽略，干脆不传。
   const filters = fileFilters(input.filters)
   if (filters.length && !(kind === 'open' && input.directory === true)) options.filters = filters
   return { action: 'dialog', kind, options }

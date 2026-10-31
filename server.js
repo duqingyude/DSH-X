@@ -35,6 +35,7 @@ import {
 import { listMcpServers, probeMcpServer, removeMcpServer, saveMcpServer, setMcpEnabled } from './mcp.js'
 import { listPatchBackups, restoreProfileBackup, sanitizeProfile, withProfileLock } from './recovery.js'
 import { createMarketStatsReader, marketRepository } from './pack-market.js'
+import { FORK } from './fork.js'
 import {
   createSkill,
   installSkillPackages,
@@ -133,7 +134,7 @@ import { netFetch, proxyEnv, resetProxyCache, resolveProxy } from './proxy.js'
 import { APP_DIR, fileManager } from './filemanager.js'
 import { DESKTOP_API_VERSION, DESKTOP_CAPABILITIES, parseDesktopRequest } from './desktop.js'
 import { checkCoreUpdate, downloadCoreTarball, extractCoreTarball, stagingExists, stagingStats } from './core-npm.js'
-import { IN_ELECTRON, IS_LINUX, IS_MAC, IS_WINDOWS, LAUNCHER_NAME, MAC_APP_NAME, NPM_MODE, PACKAGED, RUNTIME_NODE, RUNTIME_NODE_ENV } from './platform.js'
+import { IS_LINUX, IS_MAC, IS_WINDOWS, LAUNCHER_NAME, MAC_APP_NAME, PACKAGED, RUNTIME_NODE } from './platform.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -145,9 +146,11 @@ const PKG = '@deepseek-ai/dsh'
 const APP_VERSION = String(pkg.version || '0.0.0')
 /** 外壳版本：外壳加载核心前通过 DSH_SHELL_VERSION 传进来；拆包后和核心版本分开走。 */
 const SHELL_VERSION = String(process.env.DSH_SHELL_VERSION || APP_VERSION)
-const APP_REPO = 'yyh-001/DSH-X'
-// 发布页上的安装包名：scripts/pack.mjs 按平台产出同名文件
-const APP_SETUP = IS_MAC ? `DSH-X-mac-${process.arch}.dmg` : 'DSH-Setup.exe'
+/** 发布仓库来自 fork.json：沿用上游坐标会让更新器把人带去上游（方案 §11.8）。 */
+const APP_REPO = `${FORK.updateOwner}/${FORK.updateRepo}`
+// 安装包更新只给一个发布页地址：cargo-packager 的产物名带版本与架构
+// （dsh-x_<版本>_x64-setup.exe 等），没有可以写死的稳定直链；外壳自己的更新器负责自动更新。
+const APP_RELEASE_PAGE = `https://github.com/${APP_REPO}/releases/latest`
 // 管理页端口：环境变量 PORT（开发和测试用）优先，其余看设置；启动时 startServer() 再定最终值
 let PORT = resolvePort() || DEFAULT_PORT
 /** 配置的端口被别的程序占用时，往后最多试这么多个端口。 */
@@ -208,7 +211,7 @@ const profileKey = (profile) => `${homeDir()}\0${profile}`
 // 启动器更新的下载源：direct（默认直连 GitHub）/ mirror（国内加速，直连失败时走前缀镜像）
 let UPDATE_SOURCE = updateSourceForDownload(loadSettingsSync().downloadSource)
 // 打开 dsh 页面的方式：tab（系统浏览器标签页）/ app（Chromium 应用窗口）/
-// window（独立桌面窗口）/ internal（默认，主窗口标签页；需要外壳报告能力，判断见 openRoute）
+// window（独立桌面窗口，只有带内嵌窗口的外壳支持；原生外壳没有，会退回浏览器，判断见 openRoute）
 let OPEN_MODE = safeOpenMode(loadSettingsSync().openMode)
 // 是否把 dsh 的 shim 目录写进用户 PATH（默认关，改了要新开终端才生效）
 let SYSTEM_PATH = loadSettingsSync().systemPath === true
@@ -294,15 +297,13 @@ let logEventTimer = null
 
 const clients = new Set()
 /**
- * 宿主（拉起本服务的外壳）提供的钩子。默认值对应「子进程 + stdout 标记行」那条老路
- * （旧 Rust 外壳 DSH.exe 读这几行；它只剩安装引擎，不再跑 dsh）；现在的 Electron 外壳
- * 和服务在同一个进程，用 setHost 直接换成函数调用，不走管道。
+ * 宿主（拉起本服务的外壳）提供的钩子。默认值对应「子进程 + stdout 标记行」那条老路；
+ * 原生外壳（shell-rs）不读这些行，而是由 start.js 用 host-remote.js 把每个成员换成
+ * 本机 HTTP 调用（POST /host/*），服务端本身不用知道外壳在哪个进程。
  */
 let host = {
   onWake: async () => {},
-  /** 把 dsh 的界面装进外壳主窗口的标签页（openMode=internal）。 */
-  openTab: (tab) => { process.stdout.write(`__DSH_TAB__ ${JSON.stringify(tab)}\n`) },
-  /** 把地址装进外壳的独立 DSH 窗口（openMode=window）。 */
+  /** 把地址装进外壳的独立 DSH 窗口（openMode=window）；原生外壳没有内嵌窗口，桥那边落到浏览器。 */
   openWindow: (url) => { process.stdout.write(`${OPEN_SIGNAL} ${url}\n`) },
   /** 收尾之后结束服务。外壳同进程时由它决定怎么退（先关窗口、托盘），默认直接退进程。 */
   exit: (code = 0) => process.exit(code),
@@ -997,9 +998,9 @@ async function installMacUpdate(staged) {
   }
 
   const logFd = openSync(join(tmpdir(), 'DSH-X-install.log'), 'w')
-  // 外壳（Contents/MacOS/DSH）要等它退出才能换包。Electron 外壳和服务是同一个进程，
-  // 父进程是 launchd，等父进程只会白白耗满超时——直接等自己这个进程退出。
-  const shellPid = IN_ELECTRON ? process.pid : process.ppid
+  // 外壳（Contents/MacOS/DSH）要等它退出才能换包。原生外壳通过 DSH_SHELL_PID 报上自己的 pid；
+  // Electron 外壳和服务是同一个进程，父进程是 launchd，等父进程只会白白耗满超时——直接等自己。
+  const shellPid = Number(process.env.DSH_SHELL_PID) > 0 ? Number(process.env.DSH_SHELL_PID) : process.ppid
   spawn('/bin/sh', ['-c', MAC_SWAP_SCRIPT, 'dsh-x-update', String(shellPid), String(process.pid), bundle, next], {
     detached: true,
     stdio: ['ignore', logFd, logFd],
@@ -1399,14 +1400,12 @@ async function publicSettings() {
       { id: 'official', label: '官方源' },
     ],
     openMode: safeOpenMode(stored.openMode),
-    // 选了独立桌面窗口但当前没有原生外壳（源码运行）时，页面要如实说明会落到标签页
+    // 选了独立桌面窗口但当前外壳没有内嵌窗口（原生外壳 / 源码运行）时，页面要如实说明会落到浏览器
     openModeWindow: openRoute(OPEN_MODE, shellWindowHost()) === 'window',
-    openModeInternal: internalTabsHost(),
     openModes: [
       { id: 'tab', label: '浏览器标签页' },
       { id: 'app', label: '浏览器独立窗口' },
       { id: 'window', label: '独立桌面窗口' },
-      { id: 'internal', label: 'DSH-X 内部标签页' },
     ],
     systemPath: SYSTEM_PATH,
     systemBinDir: systemBinDir(),
@@ -1452,14 +1451,16 @@ async function publicSettings() {
     notificationSound: stored.notificationSound !== false,
     closeToTray: stored.closeToTray !== false,
     keepAwake: stored.keepAwake === true,
-    // 内置浏览器（右侧栏浏览器）：开关与证书策略。browserHost 表明当前外壳能否清理浏览数据
-    // （只有 Electron 外壳拿得到 guest 分区；浏览器里打开管理页 / 旧外壳没有这层能力）。
+    // 内置浏览器（右侧栏浏览器）的开关与证书策略。browserHost 表明当前外壳能否清理浏览数据
+    // （原生外壳没有内嵌浏览器，清理接口没有落点；浏览器里打开管理页时也没有）。
     browserIgnoreCertificate: stored.browserIgnoreCertificate === true,
     // 桌面增强：当前环境装了几个（设置页右侧的「一键安装」按钮按它显示安装 / 已安装）
     desktopEnhance: desktopEnhanceSummary(),
     browserHost: Boolean(host.browser),
     shellPrefs: process.env.DSH_SHELL_PREFS === '1',
-    desktopShell: shellWindowHost(),
+    // 页面用这一项判断「这些开关在桌面端可用」。原生外壳没有内嵌窗口（不设 DSH_APP_WINDOW），
+    // 但系统开关照样由它读写，所以桥在（host.desktop）也算桌面端。
+    desktopShell: shellWindowHost() || Boolean(host.desktop),
     // Web 绑定：设置值 + 插件开关是否压着它（页面要如实说明当前生效的是哪一个）
     webBind: WEB_BIND,
     webBindLan: LAN_TOGGLE,
@@ -1582,8 +1583,8 @@ export function trayStateText() {
     // 本次是不是由原生外壳托管：外壳缺失时窗口模式不成立，托盘据此退回浏览器
     `shell=${shellWindowHost() ? 1 : 0}`,
     `theme=${THEME}`,
-    // 原生标签页要跟随所有实例，不能用「最近启动的实例」去覆盖用户正在看的其他页面。
-    `instances=${JSON.stringify(instanceList().map((proc) => internalTabTarget(proc, launches.find((row) => row.proc === proc)?.name)))}`,
+    // 面板要跟随所有实例，不能用「最近启动的实例」去覆盖用户正在看的其他页面。
+    `instances=${JSON.stringify(instanceList().map((proc) => instanceTarget(proc, launches.find((row) => row.proc === proc)?.name)))}`,
     `launches=${JSON.stringify(launches.map(({ id, instanceId, name, version, profile, status, busy, installed, target }) => ({ id, instanceId, name, version, profile, status, busy, installed, target })))}`,
   ].join('\n')
 }
@@ -1603,7 +1604,7 @@ function trayLaunches() {
     return { id: preset.id, name: preset.name, version, profile: preset.profile, home, preset, proc }
   })
   for (const proc of all) {
-    if (!matched.has(proc)) rows.push({ id: `instance:${internalTabTarget(proc).id}`, name: `${proc.profile} · ${proc.version}`, version: proc.version, profile: proc.profile, home: proc.home, proc })
+    if (!matched.has(proc)) rows.push({ id: `instance:${instanceTarget(proc).id}`, name: `${proc.profile} · ${proc.version}`, version: proc.version, profile: proc.profile, home: proc.home, proc })
   }
   for (const pending of trayActions.values()) {
     if (!rows.some((row) => row.id === pending.id)) rows.push({ ...pending, proc: null })
@@ -1611,7 +1612,7 @@ function trayLaunches() {
   return rows.map((row) => {
     const key = JSON.stringify([row.home, row.version, row.profile])
     const pending = trayActions.get(key)
-    return { ...row, key, instanceId: key, status: pending?.status || row.proc?.status || 'stopped', busy: Boolean(pending), installed: versions.includes(row.version), target: row.proc ? internalTabTarget(row.proc, row.name) : null }
+    return { ...row, key, instanceId: key, status: pending?.status || row.proc?.status || 'stopped', busy: Boolean(pending), installed: versions.includes(row.version), target: row.proc ? instanceTarget(row.proc, row.name) : null }
   })
 }
 
@@ -1934,9 +1935,7 @@ async function saveManagerSettings(body) {
     pushLog(OPEN_MODE === 'app'
       ? '打开方式：浏览器独立窗口（找不到 Chrome/Edge 会退回标签页）'
       : OPEN_MODE === 'window'
-        ? `打开方式：独立桌面窗口（${shellWindowHost() ? '由启动器打开，不经过浏览器' : '当前没有原生外壳，会退回浏览器标签页'}）`
-        : OPEN_MODE === 'internal'
-          ? `打开方式：DSH-X 内部标签页（${internalTabsHost() ? '在启动器内切换' : '当前外壳不支持，会退回浏览器标签页'}）`
+        ? `打开方式：独立桌面窗口（${shellWindowHost() ? '由启动器打开，不经过浏览器' : '当前外壳没有内嵌窗口，会退回浏览器标签页'}）`
         : '打开方式：系统浏览器标签页')
   }
   if ('systemPath' in body) {
@@ -2023,8 +2022,6 @@ export function dshEnv(version, options = {}) {
   const workerCompat = existsSync(WORKER_COMPAT)
   const env = {
     ...process.env,
-    // 打包后 RUNTIME_NODE 是 Electron 本体：子进程带这个变量才会按 node 跑（见 platform.js）
-    ...RUNTIME_NODE_ENV,
     DSH_HOME: home,
     DSH_NODE: RUNTIME_NODE,
     DSH_BIN: binPath(version),
@@ -2042,7 +2039,7 @@ export function dshEnv(version, options = {}) {
     // dsh 自己要的那几个开关（--use-system-ca、--max-http-header-size、--import 钩子）走命令行，
     // 见 spawnDsh：NODE_OPTIONS 会被**所有**子进程继承，agent 在 shell 里跑的 node 万一是老版本，
     // 撞上 --use-system-ca 这种新开关会直接 bad option 退出。
-    // 同理**不能靠 NODE_PATH 传目录**：非纯 Node 宿主（Electron 主进程）不消费 NODE_PATH，
+    // 同理**不能靠 NODE_PATH 传目录**：有些宿主（Electron 主进程）不消费 NODE_PATH，
     // NODE_OPTIONS 里的裸文件名会直接 Cannot find module，把人家整个进程顶掉。
     NODE_OPTIONS: [
       process.env.NODE_OPTIONS,
@@ -2132,7 +2129,7 @@ function probeStoreVersion(dir) {
       cwd: dir,
       timeout: 20_000,
       windowsHide: true,
-      env: { ...process.env, ...RUNTIME_NODE_ENV, PATH: `${dir}${delimiter}${process.env.PATH || ''}` },
+      env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH || ''}` },
     }, (error, stdout) => {
       resolve(error ? '' : basename(String(stdout).trim().replace(/\\/g, '/')))
     })
@@ -2214,8 +2211,7 @@ function versionBinDir(version) {
  * 为什么不用版本目录里那个 .bin/dsh.cmd：它的 node 取自 PATH，而我们把用户自己的 node
  * 排在了前面（见 orderRuntimePaths），用户那套 node 要是太老就带不动 dsh。这里把启动器
  * 自己的 node 写死，`dsh` 在 shell 里就总是能跑起来，版本也跟着启动器选的那个走。
- * 打包后的 node 就是 Electron 本体，shim 里要带上 ELECTRON_RUN_AS_NODE，否则 Electron
- * 会按 GUI 起、把参数当 app 目录。
+ * 这个 node 是系统 Node（RUNTIME_NODE 来自 DSH_RUNTIME_NODE），直接当 node 用，不需要任何转换开关。
  */
 export function writeDshShims(version, options = {}) {
   const target = options.dir ?? join(DATA, '.bin')
@@ -2224,10 +2220,9 @@ export function writeDshShims(version, options = {}) {
   try {
     mkdirSync(target, { recursive: true })
     const node = RUNTIME_NODE
-    const asNode = Boolean(RUNTIME_NODE_ENV.ELECTRON_RUN_AS_NODE)
-    writeFileSync(join(target, 'dsh.cmd'), `@ECHO off\r\n${asNode ? 'SET "ELECTRON_RUN_AS_NODE=1"\r\n' : ''}"${node}" "${bin}" %*\r\n`)
+    writeFileSync(join(target, 'dsh.cmd'), `@ECHO off\r\n"${node}" "${bin}" %*\r\n`)
     const sh = join(target, 'dsh')
-    writeFileSync(sh, `#!/bin/sh\n${asNode ? 'ELECTRON_RUN_AS_NODE=1 ' : ''}exec "${node}" "${bin}" "$@"\n`)
+    writeFileSync(sh, `#!/bin/sh\nexec "${node}" "${bin}" "$@"\n`)
     try {
       chmodSync(sh, 0o755)
     } catch { /* Windows 上无所谓 */ }
@@ -2308,8 +2303,8 @@ export function applySystemPath(enabled) {
 
 export function withBundledRuntime(pathValue, preferredPnpm = '') {
   const bundled = join(ROOT, 'node')
-  // 自带运行时目录（现在只剩 npm/pnpm 和它们的命令行包装；node 本体用 Electron 自带的）。
-  // 源码运行没有这个目录，就把 Electron 本体所在目录当兜底条目，和以前一样。
+  // 自带运行时目录（现在只剩 npm/pnpm 和它们的命令行包装；跑 dsh 的 node 来自系统）。
+  // 源码运行没有这个目录，就把系统 node 所在目录当兜底条目。
   const dir = existsSync(bundled) ? bundled : dirname(RUNTIME_NODE)
   // 原 PATH 已经完整保留，只补固定位置；再筛整条 PATH 会重复探测每个目录的 pnpm 后缀。
   const parts = [...String(pathValue).split(delimiter).filter(Boolean), ...pnpmCandidates('')]
@@ -2394,8 +2389,8 @@ function nodeRequirementForInstalled() {
 /**
  * 设置页「运行 dsh 的 Node」要显示的一切：配置值、现在生效的那个、系统里找到的那个。
  *
- * 「生效」在 Electron 里看 RUNTIME_NODE_ENV：只有落到 Electron 本体时才带 ELECTRON_RUN_AS_NODE。
- * 源码运行（node start.js）时 dsh 就是用启动它的那个 node，这个设置没有意义（selectable=false）。
+ * 外壳换成 Rust 之后，跑 dsh 的 node 一律是系统 Node（外壳找到后经 DSH_RUNTIME_NODE 传进来），
+ * 没有「随包带一个」这回事了：所以这一项永远不可选、也没有待生效值，只把真实路径显示出来。
  */
 export function nodeRuntimeView(stored) {
   const configured = safeNodeRuntime(stored.nodeRuntime)
@@ -2403,24 +2398,17 @@ export function nodeRuntimeView(stored) {
   const systemPath = findSystemNode(configuredPath)
   const system = systemPath ? { path: systemPath, version: nodeVersionOf(systemPath) } : null
   const bundled = { path: process.execPath, version: process.versions.node }
-  const bundledActive = IN_ELECTRON && Boolean(RUNTIME_NODE_ENV.ELECTRON_RUN_AS_NODE)
-  const effective = !IN_ELECTRON
-    ? { kind: 'system', path: process.execPath, version: process.versions.node }
-    : bundledActive
-      ? { kind: 'bundled', path: process.execPath, version: process.versions.node }
-      : { kind: 'system', path: RUNTIME_NODE, version: nodeVersionOf(RUNTIME_NODE) }
+  const effective = { kind: 'system', path: RUNTIME_NODE, version: nodeVersionOf(RUNTIME_NODE) || process.versions.node }
   const requirement = nodeRequirementForInstalled()
-  const pending = IN_ELECTRON && (configured !== effective.kind
-    || (configured === 'system' && system && !fileManager.samePath(effective.path, system.path)))
   const below = (version) => Boolean(requirement && version && cmpVer(parseVer(version), parseVer(requirement)) < 0)
   return {
-    selectable: IN_ELECTRON,
+    selectable: false,
     configured,
     configuredPath,
     bundled,
     system,
     effective,
-    pending,
+    pending: false,
     requirement,
     systemTooOld: below(system?.version),
     effectiveTooOld: below(effective.version),
@@ -3078,7 +3066,7 @@ function spawnDsh(version, extra, profile = '', options = {}) {
   writeDshShims(version)
   // 用户开了「加到系统 PATH」的话，稳定目录里那份也跟着当前版本走
   if (SYSTEM_PATH) writeDshShims(version, { dir: systemBinDir() })
-  // 统一用 RUNTIME_NODE 拉起 dsh（打包后就是 Electron 自带的 Node，见 platform.js）；#61 的诊断
+  // 统一用 RUNTIME_NODE 拉起 dsh（来自 DSH_RUNTIME_NODE，也就是系统 Node，见 platform.js）；#61 的诊断
   // 上下文仍要在这之前建好 env。
   const env = dshEnv(version, options)
   // 启动 CPU 账本：只有真正拉起实例（bootOnce）时才写报告，插件命令 / 修复命令不写，
@@ -3158,11 +3146,9 @@ function stripTag(tag) {
 
 async function checkSelfUpdate({ force = false } = {}) {
   const current = APP_VERSION
-  const url = `https://github.com/${APP_REPO}/releases/latest/download/${APP_SETUP}`
+  const url = APP_RELEASE_PAGE
   const fallback = { current, latest: null, update: false, url }
-  // npm 版：CLI 和核心都走 npm，不提示完整安装包
-  if (NPM_MODE) return { ...fallback, npm: true }
-  // 拆包后的核心：完整安装包的自更新归外壳（electron-updater），这里不再查 GitHub
+  // 拆包后的核心：完整安装包的自更新归外壳（原生外壳的更新器），这里不再查 GitHub
   if (process.env.DSH_CORE === '1') return { ...fallback, shell: true }
   if (!force && selfCache.data && Date.now() - selfCache.at < 30 * 60 * 1000) return selfCache.data
   try {
@@ -3202,7 +3188,7 @@ const APP_UPDATE_CACHE_MS = 30 * 60 * 1000
 async function downloadAppUpdate() {
   const data = await checkAppUpdate({ force: true })
   if (!data.available) {
-    throw new Error(data.reason === 'electron' ? 'Electron 版本不同，需要完整安装包' : '当前没有可用的核心更新')
+    throw new Error(data.reason === 'shell' ? '这份核心要求更新的外壳，请先更新 DSH-X' : '当前没有可用的核心更新')
   }
   if (stagedApp && stagedApp.version === data.version && stagingExists(stagedApp.dir)) {
     return { ok: true, version: stagedApp.version, reused: true }
@@ -3242,15 +3228,18 @@ async function applyAppUpdate() {
     const child = spawn(RUNTIME_NODE, [helper,
       '--app', ROOT,
       '--staged', stagedApp.dir,
-      // AppImage 的 process.execPath 是挂载目录里的临时二进制，重启要用 APPIMAGE 本身
-      '--exe', process.env.APPIMAGE || process.execPath,
+      // 重启的是外壳，不是核心：Rust 外壳用 DSH_SHELL_EXE 自报家门，
+      // AppImage 的 process.execPath 是挂载目录里的临时二进制，要用 APPIMAGE 本身。
+      '--exe', process.env.APPIMAGE || process.env.DSH_SHELL_EXE || process.execPath,
       '--pid', String(process.pid),
+      // 外壳也要等：supervisor 会在核心退出后自动重启，只等核心会和新进程抢文件。
+      '--shell-pid', String(process.env.DSH_SHELL_PID || ''),
       '--backup', `${ROOT}.bak-${APP_VERSION}`,
       '--marker', join(APP_DIR, 'update-ok'),
       '--log', join(APP_DIR, 'update.log'),
     ], {
       cwd: tmpdir(),
-      env: { ...process.env, ...RUNTIME_NODE_ENV },
+      env: { ...process.env },
       detached: true,
       stdio: 'ignore',
       windowsHide: true,
@@ -3341,12 +3330,11 @@ export async function refreshShortcuts({ installRoot, appDir = APP_DIR, version 
 }
 
 /**
- * 检查核心更新：核心是 npm 上的 dsh-x-core-<平台>，按核心版本所在通道查 dist-tags。
- * 外壳/Electron 不在核心更新范围内（那是 electron-updater 的事）；Electron 版本不同时
+ * 检查核心更新：核心是 npm 上跨平台的 dsh-x-core（包名见 fork.json），按核心版本所在通道查 dist-tags。
+ * 外壳不在核心更新范围内（外壳自己走安装包更新）；核心声明的最低外壳版本比当前外壳新时
  * 只提示更新外壳。核心目录在用户目录里，不在签名的 .app 内，mac 也不需要重签。
  */
 async function checkAppUpdate({ force = false } = {}) {
-  if (NPM_MODE) return { available: false, reason: 'npm' }
   if (!PACKAGED || (!IS_WINDOWS && !IS_MAC && !IS_LINUX)) return { available: false, reason: PACKAGED ? 'platform' : 'source' }
   if (!force && appUpdateCache.data && Date.now() - appUpdateCache.at < APP_UPDATE_CACHE_MS) return appUpdateCache.data
   const remember = (data) => { appUpdateCache = { at: Date.now(), data }; return data }
@@ -3364,9 +3352,11 @@ async function checkAppUpdate({ force = false } = {}) {
   }
   if (!result.available) return remember({ available: false, reason: 'current', latest: result.latest || latest })
   const release = result.release
-  // 核心包声明它按哪个 Electron 版本构建；不一致就走完整安装包
-  if (release.electron && release.electron !== String(process.versions.electron)) {
-    return remember({ available: false, reason: 'electron', latest: result.latest, electron: release.electron })
+  // 核心包声明它要求的最低外壳版本（dshX.shell）：当前外壳太旧就只提示先更新外壳，
+  // 否则换上去的核心会因为宿主能力不够而崩在半路。
+  const wantShell = parseVer(release.shell)
+  if (wantShell && cmpVer(parseVer(SHELL_VERSION) || { major: 0, minor: 0, patch: 0 }, wantShell) < 0) {
+    return remember({ available: false, reason: 'shell', latest: result.latest, shell: release.shell })
   }
   pendingAppUpdate = { version: result.latest, tarball: release.tarball, integrity: release.integrity, shasum: release.shasum }
   return remember({
@@ -5309,7 +5299,8 @@ export async function restartInstalled() {
 
 export function setHost(next) {
   host = { ...host, ...next }
-  // 外壳自更新的进度/状态变化直接推给页面；服务在 Electron 主进程里，和 updater 同进程。
+  // 外壳自更新的进度/状态变化直接推给页面。原生外壳不在这个进程里，它通过
+  // POST /api/internal/shell-update 推过来，再由同样的订阅者转成 SSE。
   if (typeof next.onShellUpdateState === 'function') {
     next.onShellUpdateState((state) => emit('shellUpdate', state))
   }
@@ -5687,16 +5678,11 @@ function shellWindowHost() {
   return process.env.DSH_APP_WINDOW === '1'
 }
 
-// 旧版外壳只认识独立窗口标记；单独报告标签页能力，避免新版页面选了内部打开却没有反应。
-function internalTabsHost() {
-  return shellWindowHost() && process.env.DSH_INTERNAL_TABS === '1'
-}
-
 /**
- * 用实例身份而不是端口标识标签：重启换端口或 token 时仍能找到原来的页面。
+ * 实例身份：重启换端口或 token 时仍能找到原来的页面（面板与托盘按它对齐行）。
  * 标题优先用启动项名称（用户认的是自己起的环境名，不是版本号）；不属于任何启动项的实例才退回「profile · 版本」。
  */
-export function internalTabTarget(instance, name = '') {
+export function instanceTarget(instance, name = '') {
   return {
     id: JSON.stringify([instance.home || '', instance.version || '', instance.profile || '']),
     title: name || [instance.profile, instance.version].filter(Boolean).join(' · ') || 'DSH',
@@ -5707,10 +5693,10 @@ export function internalTabTarget(instance, name = '') {
 }
 
 /**
- * 按外壳能力选择独立窗口、主窗口标签或系统浏览器；源码运行与旧外壳要能正常降级。
+ * 按外壳能力选择独立窗口或系统浏览器。原生外壳没有内嵌窗口（不设 DSH_APP_WINDOW），
+ * 选了 window 也会落到浏览器；源码运行同理。
  */
-export function openRoute(mode, shellWindow, internalTabs = false) {
-  if (mode === 'internal' && shellWindow && internalTabs) return 'internal'
+export function openRoute(mode, shellWindow) {
   return mode === 'window' && shellWindow ? 'window' : 'browser'
 }
 
@@ -5727,30 +5713,7 @@ export function openRoute(mode, shellWindow, internalTabs = false) {
  */
 function openExternal(target, mode = OPEN_MODE) {
   const url = String(target)
-  if (openRoute(mode, shellWindowHost(), internalTabsHost()) === 'internal') {
-    // 启动等待页占的正是这个实例的标签位（id 与 internalTabTarget 同一套拼法）：
-    // 页面自己跳到 dsh 之后就是实例页，标签条上不会先多出一个「DSH」再被实例页挤掉。
-    const booting = new URL(url)
-    if (booting.pathname === '/booting') {
-      const version = booting.searchParams.get('version') || ''
-      const profile = booting.searchParams.get('profile') || ''
-      const home = booting.searchParams.get('home') || ''
-      host.openTab({
-        id: JSON.stringify([home, version, profile]),
-        title: booting.searchParams.get('name') || [profile, version].filter(Boolean).join(' · ') || 'DSH',
-        url,
-        status: 'starting',
-        managed: true,
-      })
-      return
-    }
-    const instance = instanceList().find((proc) => proc.url && new URL(proc.url).origin === new URL(url).origin)
-    const tab = instance ? internalTabTarget(instance, launchNameOf(instance)) : { id: new URL(url).origin, title: 'DSH', url, status: 'running', managed: false }
-    // 认证地址只在本机管道或同进程调用中传递；标题和实例身份都不包含 token，也不写入日志或设置。
-    host.openTab(tab)
-    return
-  }
-  // 内嵌窗口：地址交给原生外壳自己的窗口，连浏览器进程都不起（见 OPEN_SIGNAL）
+  // 内嵌窗口：地址交给外壳自己的窗口，连浏览器进程都不起（见 OPEN_SIGNAL）
   if (openRoute(mode, shellWindowHost()) === 'window') {
     host.openWindow(url)
     return
@@ -5901,7 +5864,7 @@ function probeTimeout(value) {
  * 那是启动器给 dsh 自己挂的加载钩子，塞给被测的 MCP 程序只会添乱。
  */
 function probeEnv() {
-  const env = { ...process.env, ...RUNTIME_NODE_ENV, ...proxyEnv(), PATH: withBundledRuntime(process.env.PATH || '') }
+  const env = { ...process.env, ...proxyEnv(), PATH: withBundledRuntime(process.env.PATH || '') }
   delete env.NODE_OPTIONS
   return env
 }
@@ -6014,7 +5977,7 @@ async function handleApi(req, res, url) {
     const info = await checkSelfUpdate({ force: refresh })
     // staged / downloading 让页面重载后也能知道下载进度：下载在服务端跑，和弹窗开不开无关
     const app = await checkAppUpdate({ force: refresh }).catch((error) => ({ available: false, reason: 'error', error: error?.message || String(error) }))
-    send(res, 200, { ...info, npm: NPM_MODE, shell: host.shellUpdate?.state() || null, staged: stagedUpdate?.latest || '', downloading: selfDownloadInFlight, app, appStaged: stagedApp?.version || '' })
+    send(res, 200, { ...info, shell: host.shellUpdate?.state() || null, staged: stagedUpdate?.latest || '', downloading: selfDownloadInFlight, app, appStaged: stagedApp?.version || '' })
     return
   }
   if (req.method === 'GET' && url.pathname === '/api/shell-update') {
@@ -6038,9 +6001,27 @@ async function handleApi(req, res, url) {
     return
   }
   if (req.method === 'POST' && url.pathname === '/api/shell-update/install') {
-    // 先响应，再停 dsh、退出，交给 electron-updater 静默安装
+    // 先响应，再停 dsh、退出，交给外壳的更新器静默安装
     send(res, 200, { ok: true })
     void host.shellUpdate?.install().catch((error) => pushLog(`外壳更新安装失败：${error?.message || error}`))
+    return
+  }
+  // 原生外壳把更新进度推过来。外壳和核心是两个进程，进度只能从外面进来，
+  // 由这里转成 SSE（管理页订阅的 shellUpdate 事件）。
+  // token 再对一次：这条路会改管理页显示的更新状态，不能只听 loopback 就算数。
+  if (req.method === 'POST' && url.pathname === '/api/internal/shell-update') {
+    const expected = process.env.DSH_SHELL_TOKEN || ''
+    if (!expected || String(req.headers.authorization || '') !== 'Bearer ' + expected) {
+      send(res, 403, { error: '外壳推送缺少 token' })
+      return
+    }
+    try {
+      const state = await readJson(req)
+      host.shellUpdate?.ingest?.(state)
+      send(res, 200, { ok: true })
+    } catch (error) {
+      send(res, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
     return
   }
   if (req.method === 'GET' && url.pathname === '/api/pending') {
@@ -6290,7 +6271,7 @@ async function handleApi(req, res, url) {
     }
     return
   }
-  // 设置页「浏览器控制」的两个清理按钮：guest 分区在 Electron 外壳里，核心只能转发。
+  // 设置页「浏览器控制」的两个清理按钮：guest 分区在外壳那边，核心只能转发。
   // 只影响内置浏览器（persist:dsh-sidebar-browser-*），管理页和 dsh 页面的数据不动。
   if (req.method === 'POST' && (url.pathname === '/api/browser/clear-cache' || url.pathname === '/api/browser/clear-data')) {
     if (!host.browser) {
@@ -7348,8 +7329,8 @@ export async function startServer() {
   LAN_TOGGLE = lanBindToggleOn(homeDir(), PROFILE_NAME)
   if (CLI_ARGS.length) pushLog(`DSH.exe 传入启动参数：${CLI_ARGS.join(' ')}`)
   const stored = await loadSettings()
-  // 跑 dsh 的 node 不是自带的 Electron 时记一笔：出问题时日志里能看出用的是哪个
-  if (IN_ELECTRON && !RUNTIME_NODE_ENV.ELECTRON_RUN_AS_NODE) {
+  // 跑 dsh 的 node 一律是系统的那个，启动时记一笔：出问题时日志里能看出用的是哪个
+  if (PACKAGED) {
     const version = nodeVersionOf(RUNTIME_NODE)
     pushLog(`跑 dsh 的 node：${RUNTIME_NODE}${version ? `（v${version}）` : ''}`)
   }

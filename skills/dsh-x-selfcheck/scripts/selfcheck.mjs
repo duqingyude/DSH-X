@@ -32,7 +32,7 @@ const KEBAB_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const LEGACY_FRONTMATTER_KEYS = ['disableModelInvocation', 'modelInvocable', 'userInvocable']
 const PROFILE_RE = /^[A-Za-z0-9._-]{1,32}$/
 const PROXY_MODES = ['off', 'system', 'manual']
-const OPEN_MODES = ['tab', 'app', 'window', 'internal']
+const OPEN_MODES = ['tab', 'app', 'window']
 const WEB_BINDS = ['loopback', 'lan']
 const DOWNLOAD_SOURCES = ['mirror', 'official']
 const SECTION_LABEL = {
@@ -611,7 +611,7 @@ function validateSettings(settings) {
     put(`profile=「${oneLine(settings.profile, 40)}」不是合法 profile 名，会退回 ${DEFAULT_PROFILE}`)
   }
   if ('proxyMode' in settings && !PROXY_MODES.includes(String(settings.proxyMode).toLowerCase())) put(`proxyMode=「${oneLine(settings.proxyMode, 40)}」不认识，会退回 system（跟随系统代理）`)
-  if ('openMode' in settings && !OPEN_MODES.includes(String(settings.openMode))) put(`openMode=「${oneLine(settings.openMode, 40)}」不认识，会退回 internal`)
+  if ('openMode' in settings && !OPEN_MODES.includes(String(settings.openMode))) put(`openMode=「${oneLine(settings.openMode, 40)}」不认识，会退回 tab`)
   if ('webBind' in settings && !WEB_BINDS.includes(String(settings.webBind))) put(`webBind=「${oneLine(settings.webBind, 40)}」不认识，会退回 loopback`)
   if ('downloadSource' in settings && !DOWNLOAD_SOURCES.includes(String(settings.downloadSource))) put(`downloadSource=「${oneLine(settings.downloadSource, 40)}」不认识，会退回 mirror`)
   for (const key of ['dataDir', 'dshHome']) {

@@ -1,7 +1,7 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { PosixFileManager } from './filemanager-base.js'
-import { APP_DIR_NAME, IN_ELECTRON } from './platform.js'
+import { APP_DIR_NAME } from './platform.js'
 
 /** 对话框等用户的时间：目录 5 分钟、文件 10 分钟，和其他平台一致。 */
 const DIRECTORY_TIMEOUT = 5 * 60 * 1000
@@ -33,12 +33,13 @@ export class LinuxFileManager extends PosixFileManager {
 
   /**
    * 登录自启要执行的外壳：AppImage 用 APPIMAGE 本身（挂载目录每次启动都会变），
-   * 安装版用当前 Electron 可执行文件；源码运行返回空串。
+   * 其次用外壳通过 DSH_SHELL_EXE 报上来的可执行文件；源码运行返回空串。
    */
   launcherExecutable() {
     const appImage = String(this.env.APPIMAGE || '').trim()
     if (appImage && this.exists(appImage)) return appImage
-    if (IN_ELECTRON && !process.defaultApp) return process.execPath
+    const shellExe = String(this.env.DSH_SHELL_EXE || '').trim()
+    if (shellExe) return this.exists(shellExe) ? shellExe : ''
     return ''
   }
 

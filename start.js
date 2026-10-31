@@ -8,6 +8,7 @@ import {
 } from './server.js'
 import { resolvePort } from './settings.js'
 import { APP_DIR, fileManager } from './filemanager.js'
+import { remoteHostFromEnv } from './host-remote.js'
 
 const ROOT = dirname(fileURLToPath(import.meta.url))
 const PORT = resolvePort()
@@ -15,6 +16,9 @@ const MANAGER_URL = `http://127.0.0.1:${PORT}/`
 // 由原生外壳（DSH.exe / DSH-X.app）拉起时它设这个变量：管理页装进它自己的窗口，托盘也归它，
 // 这里就只剩服务本身，不用再往系统浏览器里开页面。
 const APP_WINDOW = process.env.DSH_APP_WINDOW === '1'
+// 原生外壳（Rust）拉起时它把桥地址和 token 放到环境里：host 成员改走本机 HTTP，
+// 服务和外壳不再同一个进程（§6）。浏览器模式和旧外壳没有这两个变量，走下面原来的路。
+const REMOTE_HOST = remoteHostFromEnv(process.env, { log })
 const LOG_DIR = APP_DIR
 const LOG = join(LOG_DIR, 'manager.log')
 
@@ -45,10 +49,15 @@ function requestShow() {
   return true
 }
 
-/** 叫回管理页：有 app 窗口就让它显示，没有就照旧开浏览器标签页。 */
+/** 叫回管理页：有外壳就让它把面板叫到前面，没有就照旧开浏览器标签页。 */
 async function showManager() {
-  if (requestShow()) return
+  if (REMOTE_HOST) {
+    REMOTE_HOST.onWake()
+    return true
+  }
+  if (requestShow()) return true
   openPage(MANAGER_URL)
+  return false
 }
 
 /** 唤醒已经在跑的那个实例（端口可能因为顺延而不是配置值）。 */
@@ -69,8 +78,43 @@ async function wakeExisting(port = PORT) {
   return false
 }
 
+/**
+ * 外壳被强杀（任务管理器、卸载程序、崩溃）时，核心会变成孤儿：继续占着管理页端口，
+ * 还让卸载程序删不掉自己的目录。每 3 秒看一次 DSH_SHELL_PID，父进程没了就自己收摊。
+ * 只在原生外壳下开（浏览器模式没有这个变量）；EPERM 说明进程还在、只是打不开，按活着算。
+ */
+function watchShell() {
+  const pid = Number(process.env.DSH_SHELL_PID || 0)
+  if (!REMOTE_HOST || !(pid > 0)) return
+  const alive = () => {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch (error) {
+      return error?.code === 'EPERM'
+    }
+  }
+  setInterval(() => {
+    if (alive()) return
+    log(`外壳进程 ${pid} 已退出，核心跟着退出`)
+    shutdown().finally(() => process.exit(0))
+  }, 3000).unref()
+}
+
 async function main() {
+  // 0.1.25 起换成了 Rust 原生外壳。旧 Electron 外壳加载这版核心会缺一堆东西
+  // （窗口、托盘、桥都没了），不如在这里说清楚该装什么。
+  if (process.versions.electron) {
+    console.error('这版 DSH-X 核心需要新的原生外壳，请到发布页下载最新安装包（旧的 Electron 外壳不再支持）')
+    process.exit(1)
+  }
   log('启动管理器', ROOT)
+  // 必须在 startServer 之前装：另一个实例双击启动时会立刻打 /api/wake，
+  // 晚一步装就丢掉了那次唤醒（外壳侧等的是一个请求，不是一条 stdout 标记行）。
+  if (REMOTE_HOST) {
+    log(`原生外壳桥：${process.env.DSH_SHELL_URL}`)
+    setHost(REMOTE_HOST)
+  }
   try {
     await startServer()
   } catch (error) {
@@ -81,7 +125,7 @@ async function main() {
       log(`管理页已经在 ${port} 端口上跑着，通知它把窗口叫出来`)
       await wakeExisting(port)
       await showManager()
-      if (!APP_WINDOW) {
+      if (!APP_WINDOW && !REMOTE_HOST) {
         try {
           const res = await fetch(`http://127.0.0.1:${port}/api/state`, { cache: 'no-store', signal: AbortSignal.timeout(3000) })
           const data = await res.json()
@@ -93,13 +137,16 @@ async function main() {
     throw error
   }
 
-  // 托盘和窗口都在 DSH.exe 那边，本进程只剩服务，靠 http server 活着。
+  // 托盘和窗口都在外壳那边，本进程只剩服务，靠 http server 活着。
   // onWake 要尽早挂上：另一个实例双击启动时会立刻打 /api/wake，晚一步就丢了这个请求。
-  setHost({ onWake: () => showManager() })
+  // 有原生外壳时它已经由远程 host 转到面板，这里只补浏览器模式的那条路。
+  if (!REMOTE_HOST) setHost({ onWake: () => showManager() })
 
   // 内核由 startServer 按启动项的勾选在后台拉起，这里不等待它们就绪。
   // 更新也一样：启动时不打扰，更新按钮留在界面上，点了才弹确认。
-  if (!APP_WINDOW) openPage(MANAGER_URL)
+  if (!APP_WINDOW && !REMOTE_HOST) openPage(MANAGER_URL)
+
+  watchShell()
 
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => {

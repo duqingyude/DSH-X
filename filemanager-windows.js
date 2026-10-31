@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { FileManager } from './filemanager-base.js'
-import { APP_DIR_NAME, IN_ELECTRON, LAUNCHER_NAME } from './platform.js'
+import { APP_DIR_NAME } from './platform.js'
 
 /** 自启写在这条注册表项下：每用户的 Run，不需要管理员。 */
 const RUN_REG = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
@@ -47,16 +47,14 @@ export class WindowsFileManager extends FileManager {
   }
 
   /**
-   * Electron 外壳里 DSH.exe 就是 process.execPath（打包后在安装目录根上，不在 resources/app 里）。
-   * 源码运行（npm run electron）时 defaultApp 为真，execPath 是 node_modules 里的 electron.exe，
-   * 不能让开机自启把它写进注册表。老的 Rust 外壳布局仍然认（装过 0.1.19 及以前的机器）。
+   * 登录自启 / 快捷方式要执行的外壳。原生外壳把用户点的那个 exe 通过 DSH_SHELL_EXE 告诉核心
+   * （cargo-packager 的 NSIS 装出来是 dsh-x.exe）——外壳换实现时这里不用跟着改。
+   * 没设时按源码运行处理：根目录下只有源码，不该把 `node start.js` 写进开机自启。
    */
   launcherExecutable() {
-    if (IN_ELECTRON) {
-      if (process.defaultApp) return ''
-      return process.execPath
-    }
-    const exe = join(this.root, `${LAUNCHER_NAME}.exe`)
+    const shellExe = String(this.env.DSH_SHELL_EXE || '').trim()
+    if (shellExe) return this.exists(shellExe) ? shellExe : ''
+    const exe = join(this.root, 'dsh-x.exe')
     return this.exists(exe) ? exe : ''
   }
 
