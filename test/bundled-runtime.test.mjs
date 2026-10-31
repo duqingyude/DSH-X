@@ -141,10 +141,14 @@ test('dsh 的开关在命令行上，不进 NODE_OPTIONS；worker 需要的 --re
 // 加载器初始化不消费它，裸文件名直接 Cannot find module，把应用在起来之前就顶死。
 test('worker 补丁进 NODE_OPTIONS 用的是绝对路径，不再靠 NODE_PATH', () => {
   const env = dshEnv('0.1.7-rc.1')
-  // 别假设 process.env.NODE_OPTIONS 是空的：开发机/CI 上可能本来就有值（本仓库自己就会设），
-  // 这里只挑 dsh 加进去的那一条（指向 worker-events.cjs 的绝对路径）。
+  // 别假设 process.env.NODE_OPTIONS 是空的：开发机/CI 上可能本来就有值，在 DSH 里跑测试时
+  // 宿主启动器自己就注入了一份同名补丁（.../compat/worker-events.cjs）。先记下继承来的条目，
+  // 只看 dsh 这次新加的那条，否则会把宿主那份也算成 dsh 的。
+  const inherited = new Set([...String(process.env.NODE_OPTIONS || '').matchAll(/--require\s+(\S+)/g)]
+    .map((match) => match[1].replace(/^"|"$/g, '')))
   const targets = [...env.NODE_OPTIONS.matchAll(/--require\s+(\S+)/g)]
     .map((match) => match[1].replace(/^"|"$/g, ''))
+    .filter((target) => !inherited.has(target))
   const ours = targets.filter((target) => isAbsolute(target) && target.endsWith('worker-events.cjs'))
 
   assert.equal(ours.length, 1, `dsh 的 worker 补丁必须以绝对路径注入：${env.NODE_OPTIONS}`)

@@ -13,7 +13,8 @@ const install = join(root, 'install'), app = isolateUserHome(join(root, 'user'))
 mkdirSync(install, { recursive: true })
 mkdirSync(app, { recursive: true })
 for (const file of readdirSync(new URL('../', import.meta.url))) {
-  if (/\.(js|mjs|cjs)$/.test(file) || file === 'package.json') copyFileSync(new URL(`../${file}`, import.meta.url), join(install, file))
+  // fork.json 是发布身份（appId/更新源/核心包名），platform.js 与 server.js 启动时就会读它
+  if (/\.(js|mjs|cjs)$/.test(file) || file === 'package.json' || file === 'fork.json') copyFileSync(new URL(`../${file}`, import.meta.url), join(install, file))
 }
 mkdirSync(join(install, 'public'))
 copyFileSync(new URL('../public/index.html', import.meta.url), join(install, 'public', 'index.html'))

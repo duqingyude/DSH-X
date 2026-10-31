@@ -100,6 +100,19 @@ test('打开地址：Windows 过滤 cmd 的元字符，macOS 原样交给 open',
   assert.deepEqual(mac.calls[0], { command: 'open', args: ['http://127.0.0.1:1/?&x=1'], options: {} })
 })
 
+// 换掉 Electron 外壳以后，核心不该再靠 process.execPath 猜「用户点的那个 exe」：
+// 外壳用 DSH_SHELL_EXE 自报家门，核心只管照写自启项 / LaunchAgent / 快捷方式。
+test('外壳用 DSH_SHELL_EXE 自报家门时，自启项就用它；路径不在就写空串', () => {
+  const windows = new WindowsFileManager({ root: 'C:\\DSH', env: { DSH_SHELL_EXE: 'C:\\DSH\\DSH.exe' }, existsSync: () => true })
+  assert.equal(windows.launcherExecutable(), 'C:\\DSH\\DSH.exe')
+
+  const gone = new WindowsFileManager({ root: 'C:\\DSH', env: { DSH_SHELL_EXE: 'C:\\DSH\\DSH.exe' }, existsSync: () => false })
+  assert.equal(gone.launcherExecutable(), '', '指向空气的自启项会把用户送进一条死路')
+
+  const linux = new LinuxFileManager({ home: '/home/a', env: { DSH_SHELL_EXE: '/usr/bin/dsh-x' }, existsSync: () => true })
+  assert.equal(linux.launcherExecutable(), '/usr/bin/dsh-x')
+})
+
 test('Linux：XDG 目录、AppImage 自启、zenity/kdialog 对话框', async () => {
   const linux = new LinuxFileManager({ home: '/home/a', env: { XDG_CONFIG_HOME: '/home/a/.config' }, existsSync: () => true })
   assert.equal(linux.platform, 'linux')

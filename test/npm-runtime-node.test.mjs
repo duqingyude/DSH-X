@@ -18,7 +18,6 @@ test('打包后：自带运行时目录追加到 PATH 末尾，原有条目一�
     dir: BUNDLED,
     sep: ':',
     exists: () => true,
-    inElectron: true,
   })
   assert.equal(path, `/usr/bin:/bin:${BUNDLED}`)
 })
@@ -28,14 +27,13 @@ test('追加不插队：用户的 node 仍排在前面（和 dsh 子进程的 PA
     dir: BUNDLED,
     sep: ':',
     exists: () => true,
-    inElectron: true,
   })
   assert.ok(path.indexOf('/opt/node/bin') < path.indexOf(BUNDLED))
 })
 
 test('已经在 PATH 里就不重复塞', () => {
   const original = `/usr/bin:${BUNDLED}`
-  assert.equal(withRuntimeNode(original, { dir: BUNDLED, sep: ':', exists: () => true, inElectron: true }), original)
+  assert.equal(withRuntimeNode(original, { dir: BUNDLED, sep: ':', exists: () => true }), original)
 })
 
 test('源码运行没有 node/ 目录：退回 node 自己所在的目录', () => {
@@ -44,23 +42,10 @@ test('源码运行没有 node/ 目录：退回 node 自己所在的目录', () =
     runtime: '/opt/node/bin/node',
     sep: ':',
     exists: () => false,
-    inElectron: false,
   })
   assert.equal(path, '/usr/bin:/opt/node/bin')
 })
 
-test('Electron 外壳里没有 node/ 目录时帮不上忙，PATH 原样返回', () => {
-  const original = '/usr/bin'
-  // Electron 本体所在目录里没有 node.exe，塞进去只会让人以为修好了
-  assert.equal(withRuntimeNode(original, {
-    dir: '/app/node',
-    runtime: '/app/DSH.exe',
-    sep: ':',
-    exists: () => false,
-    inElectron: true,
-  }), original)
-})
-
 test('空 PATH 也能用', () => {
-  assert.equal(withRuntimeNode('', { dir: BUNDLED, sep: ':', exists: () => true, inElectron: true }), BUNDLED)
+  assert.equal(withRuntimeNode('', { dir: BUNDLED, sep: ':', exists: () => true }), BUNDLED)
 })

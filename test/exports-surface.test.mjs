@@ -9,8 +9,8 @@ import * as platform from '../platform.js'
 /**
  * platform.js / filemanager.js 的导出被谁具名导入，逐个对照现存导出。
  *
- * 动机：#63 把 APP_DIR 从 platform.js 挪进 filemanager.js 时漏了 shell/main.mjs，
- * 测试套件不加载 shell/（Electron 主进程才加载），结果打出来的安装包一起动就崩——
+ * 动机：#63 把 APP_DIR 从 platform.js 挪进 filemanager.js 时漏了外壳的入口文件，
+ * 测试套件不加载外壳（要真起 GUI 才加载），结果打出来的安装包一启动就崩——
  * 这种「导出挪窝漏改消费者」只能靠结构检查兜住。
  */
 

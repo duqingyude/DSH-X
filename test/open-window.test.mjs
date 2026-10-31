@@ -5,21 +5,21 @@ import { join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import { appWindowArgs, chromiumCandidates, findChromiumBrowser, internalTabTarget, openRoute } from '../server.js'
+import { appWindowArgs, chromiumCandidates, findChromiumBrowser, instanceTarget, openRoute } from '../server.js'
 import { DEFAULTS, OPEN_MODES, safeOpenMode } from '../settings.js'
 
-// 内部标签页默认承载 dsh；没有新版外壳时仍能退回浏览器，已有明确选择不被覆盖。
+// 默认交给系统浏览器；独立窗口只在外壳托管时成立，已有明确选择不被覆盖。
 
-test('打开方式默认内部标签页，缺失或脏值回默认，已有选择保持不变', () => {
-  assert.deepEqual(OPEN_MODES, ['tab', 'app', 'window', 'internal'])
-  assert.equal(DEFAULTS.openMode, 'internal')
+test('打开方式默认浏览器标签页，缺失或脏值回默认，已撤掉的 internal 也回默认', () => {
+  assert.deepEqual(OPEN_MODES, ['tab', 'app', 'window'])
+  assert.equal(DEFAULTS.openMode, 'tab')
   assert.equal(safeOpenMode('app'), 'app')
   assert.equal(safeOpenMode('window'), 'window')
-  assert.equal(safeOpenMode('internal'), 'internal')
   assert.equal(safeOpenMode('tab'), 'tab')
-  assert.equal(safeOpenMode('webview'), 'internal', '没实现的形态不能被放行')
-  assert.equal(safeOpenMode(''), 'internal')
-  assert.equal(safeOpenMode(undefined), 'internal')
+  assert.equal(safeOpenMode('webview'), 'tab', '没实现的形态不能被放行')
+  assert.equal(safeOpenMode('internal'), 'tab', '内部标签页随 Electron 外壳撤了，旧设置回落到浏览器')
+  assert.equal(safeOpenMode(''), 'tab')
+  assert.equal(safeOpenMode(undefined), 'tab')
 })
 
 test('应用窗口的参数就是 --app=<url>', () => {
@@ -61,31 +61,26 @@ test('桌面窗口模式只在原生外壳托管时成立', () => {
   assert.equal(openRoute('tab', false), 'browser')
 })
 
-test('设置页在「选了桌面窗口但没有原生外壳」时如实说明会落到标签页', () => {
+test('设置页在「没有独立桌面窗口」时把这一项藏起来，并对老设置说明会落到浏览器', () => {
   const html = readFileSync(fileURLToPath(new URL('../public/index.html', import.meta.url)), 'utf8')
-  assert.match(html, /openModeEl\.value === 'window' && data\.openModeWindow === false/, '按服务端给的可用性判断')
-  assert.match(html, /当前预览使用浏览器标签页/, '说明会退回浏览器标签页')
+  // 原生外壳没有内嵌窗口：列出来也只会落到浏览器，所以按服务端的 openModeWindow 过滤掉
+  assert.match(html, /const modes = openModeWindowSupported \? allModes : allModes\.filter/, '按服务端给的可用性筛选项')
+  assert.match(html, /当前外壳没有独立桌面窗口，会改用系统浏览器打开/, '说明会退回浏览器')
   assert.match(html, /打开 dsh 的方式[\s\S]{0,400}?<select id="openMode"><\/select>/, '还是同一个下拉')
 })
 
-test('内部标签页需要新版外壳能力；旧外壳和源码运行仍能打开浏览器', () => {
-  assert.equal(openRoute('internal', true, true), 'internal')
-  assert.equal(openRoute('internal', true, false), 'browser')
-  assert.equal(openRoute('internal', false, true), 'browser')
-  assert.equal(openRoute('internal', false, false), 'browser')
-})
 
-test('内部标签按环境和版本识别，重启更换端口与认证 token 不会增加标签', () => {
+test('实例身份按环境和版本识别：重启换端口与认证 token 仍指向同一个实例', () => {
   const instance = { home: 'C:\\dsh-home', version: '1.0.0', profile: 'web', status: 'running', url: 'http://127.0.0.1:1234/?token=first' }
-  const first = internalTabTarget(instance)
-  const restarted = internalTabTarget({ ...instance, url: 'http://127.0.0.1:2345/?token=second' })
+  const first = instanceTarget(instance)
+  const restarted = instanceTarget({ ...instance, url: 'http://127.0.0.1:2345/?token=second' })
   assert.equal(first.id, restarted.id)
   assert.equal(restarted.url, 'http://127.0.0.1:2345/?token=second')
-  assert.notEqual(first.id, internalTabTarget({ ...instance, profile: 'other' }).id)
-  assert.notEqual(first.id, internalTabTarget({ ...instance, home: 'D:\\other-home' }).id)
-  assert.notEqual(first.id, internalTabTarget({ ...instance, version: '2.0.0' }).id)
+  assert.notEqual(first.id, instanceTarget({ ...instance, profile: 'other' }).id)
+  assert.notEqual(first.id, instanceTarget({ ...instance, home: 'D:\\other-home' }).id)
+  assert.notEqual(first.id, instanceTarget({ ...instance, version: '2.0.0' }).id)
   assert.ok(!first.id.includes('token=') && !first.title.includes('token='))
-  assert.equal(internalTabTarget(instance, '工作').title, '工作', '属于启动项的实例用启动项名称做标题')
-  assert.equal(internalTabTarget(instance, '工作').id, first.id, '标题不参与标签身份')
+  assert.equal(instanceTarget(instance, '工作').title, '工作', '属于启动项的实例用启动项名称做标题')
+  assert.equal(instanceTarget(instance, '工作').id, first.id, '标题不参与身份')
   assert.equal(first.title, 'web · 1.0.0', '没有启动项时退回 profile · 版本')
 })

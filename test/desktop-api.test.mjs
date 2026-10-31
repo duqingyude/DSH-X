@@ -66,7 +66,7 @@ test('插件桌面 API：能力清单、请求校验与外壳转发', async (t) 
   const calls = []
   let notifyResult = { shown: true }
   const desktop = {
-    info: () => ({ theme: 'dark', versions: { shell: '9.9.9', electron: '44.7.0' } }),
+    info: () => ({ theme: 'dark', versions: { shell: '9.9.9', node: '22.19.0' } }),
     notify: (request) => { calls.push(['notify', request]); return notifyResult },
     open: (request) => { calls.push(['open', request]) },
     reveal: (request) => { calls.push(['reveal', request]) },
@@ -84,7 +84,7 @@ test('插件桌面 API：能力清单、请求校验与外壳转发', async (t) 
     assert.deepEqual(info.capabilities, ['notify', 'open', 'reveal', 'clipboard', 'dialog'])
     assert.equal(info.theme, 'dark')
     assert.equal(info.versions.shell, '9.9.9')
-    assert.equal(info.versions.electron, '44.7.0')
+    assert.equal(info.versions.node, '22.19.0')
     assert.equal(info.versions.core, JSON.parse(read('package.json')).version)
     assert.deepEqual(info.notifications, { enabled: true, sound: true })
     const env = server.dshEnv('0.1.7')

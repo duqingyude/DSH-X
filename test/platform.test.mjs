@@ -53,13 +53,13 @@ test('appBundle：源码目录、布局不全都不算包；Windows 没有包这
   assert.equal(windows({ root: 'C:\\Program Files\\DSH' }).appBundle(), '')
 })
 
-test('自启命令：装好的 mac 走 open -a，Windows 直接用 DSH.exe，源码运行回落 node start.js', () => {
+test('自启命令：装好的 mac 走 open -a，Windows 直接用 dsh-x.exe，源码运行回落 node start.js', () => {
   const installed = mac({ root: '/Applications/DSH-X.app/Contents/Resources/app', existsSync: () => true })
   assert.deepEqual(installed.launchArgs(), ['/usr/bin/open', '-a', '/Applications/DSH-X.app'])
   const exe = windows({ root: 'C:\\DSH', existsSync: () => true })
-  assert.deepEqual(exe.launchArgs(), [join('C:\\DSH', 'DSH.exe')])
+  assert.deepEqual(exe.launchArgs(), [join('C:\\DSH', 'dsh-x.exe')])
   // 路径里有空格时每一项都得带引号，注册表里那条命令才不会被拆开
-  assert.equal(exe.launchCommand(), `"${join('C:\\DSH', 'DSH.exe')}"`)
+  assert.equal(exe.launchCommand(), `"${join('C:\\DSH', 'dsh-x.exe')}"`)
   assert.deepEqual(mac({ root: '/Users/a/code/DSH-X' }).launchArgs(), [RUNTIME_NODE, join('/Users/a/code/DSH-X', 'start.js')])
 })
 

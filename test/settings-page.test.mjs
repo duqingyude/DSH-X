@@ -147,7 +147,7 @@ test('设置页有「关于」：核心/外壳版本，按钮主动检查更新'
   assert.match(html, /已是最新版本（核心 \{core\}，外壳 \{shell\}）/, '都最新时同时报两个版本')
   assert.match(html, /核心更新检查失败：\{message\}/, '核心检查失败单独提示')
   assert.match(html, /data\.app\?\.reason === 'manifest'/, 'npm 元数据取不到时也如实报错')
-  assert.match(html, /data\.app\?\.reason === 'electron'/, '核心需要新版 Electron 时提示先更新外壳')
+  assert.match(html, /data\.app\?\.reason === 'shell'/, '核心要求更新的外壳时提示先更新外壳')
   const server = readFileSync(fileURLToPath(new URL('../server.js', import.meta.url)), 'utf8')
   assert.match(server, /const refresh = url\.searchParams\.get\('refresh'\) === '1'/, 'refresh=1 解析成布尔')
   assert.match(server, /checkAppUpdate\(\{ force: refresh \}\)/, '核心清单也绕缓存')
@@ -209,7 +209,7 @@ test('外观跟着状态推送走：设置标签里换主题，管窗口的那�
 })
 
 test('常规的系统组有六个桌面端开关，成败都按服务端回值回显', () => {
-  // 键名和 shell/prefs.mjs / settings.js 的 DEFAULTS 是同一组，别在页面里改名
+  // 键名和 shell-rs/src/prefs.rs / settings.js 的 DEFAULTS 是同一组，别在页面里改名
   const ids = ['hardwareAcceleration', 'autoUpdate', 'taskNotifications', 'notificationSound', 'closeToTray', 'keepAwake']
   for (const id of ids) {
     assert.match(html, new RegExp(`<input id="${id}" type="checkbox" />`), `${id} 是复选框`)
