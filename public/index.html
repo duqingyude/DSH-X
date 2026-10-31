@@ -64,38 +64,16 @@
   <header>
     <div class="brand-block">
       <button type="button" class="brand-home" id="brandHome" title="返回启动器主页" aria-label="返回启动器主页" data-i18n-title="返回启动器主页" data-i18n-aria-label="返回启动器主页">
-        <!-- 内部标签页里换成浏览器那种「回主页」图标，文字 logo 只在没有标签条时显示（见 launcher.css 的 .internal-tabs） -->
-        <span class="brand-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 10.6 12 3.9l8.4 6.7"/><path d="M6.2 9.3V20h11.6V9.3"/></svg>
-        </span>
         <span class="brand">DSH-X</span>
         <span class="app-ver" id="appVer">__APP_VERSION__</span>
       </button>
       <button type="button" class="self-update" id="selfUpdate" hidden data-i18n="更新">更新</button>
-    </div>
-    <div class="internal-tabs-area" id="internalTabsArea" hidden>
-      <div class="internal-tab-list" id="internalTabList" role="tablist" aria-label="DSH-X"></div>
-      <button type="button" class="gear-btn internal-tab-reload" id="internalTabReload" title="刷新页面" aria-label="刷新页面">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.5 14.7a8 8 0 1 1-1.9-8.3L21 10"/><path d="M21 4v6h-6"/></svg>
-      </button>
     </div>
     <div class="header-right">
       <!-- 设置入口：主页右上角的齿轮（原来那排 tab 已经并进设置页的左侧导航） -->
       <button type="button" class="gear-btn" id="settingsEntry" aria-label="设置" aria-pressed="false" title="设置">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 15.3a3.3 3.3 0 1 0 0-6.6 3.3 3.3 0 0 0 0 6.6Z"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.8a1.6 1.6 0 0 0 .3 1.8l.1.1a1.9 1.9 0 1 1-2.7 2.7l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5v.2a1.9 1.9 0 1 1-3.8 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a1.9 1.9 0 1 1-2.7-2.7l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3.4a1.9 1.9 0 1 1 0-3.8h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a1.9 1.9 0 1 1 2.7-2.7l.1.1a1.6 1.6 0 0 0 1.8.3h.1a1.6 1.6 0 0 0 1-1.5V3.4a1.9 1.9 0 1 1 3.8 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a1.9 1.9 0 1 1 2.7 2.7l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1h.2a1.9 1.9 0 1 1 0 3.8h-.1a1.6 1.6 0 0 0-1.5 1Z"/></svg>
       </button>
-      <!-- app 窗口模式才显示：原生标题栏被去掉了，最小化/最大化/关闭由页面接管 -->
-      <div class="win-controls">
-        <button type="button" class="win-btn" id="winMin" title="最小化" aria-label="最小化">
-          <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5.5h10" stroke="currentColor" stroke-width="1.1" fill="none"/></svg>
-        </button>
-        <button type="button" class="win-btn" id="winMax" title="最大化" aria-label="最大化">
-          <svg viewBox="0 0 10 10" aria-hidden="true"><rect x=".7" y=".7" width="8.6" height="8.6" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>
-        </button>
-        <button type="button" class="win-btn close" id="winClose" title="关闭" aria-label="关闭">
-          <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M.7.7l8.6 8.6M9.3.7L.7 9.3" stroke="currentColor" stroke-width="1.1" fill="none"/></svg>
-        </button>
-      </div>
     </div>
   </header>
   <main class="home">
@@ -584,7 +562,7 @@
                     <span class="set-desc" data-i18n="在 GitHub 上给 DSH-X 点个 Star">在 GitHub 上给 DSH-X 点个 Star</span>
                   </div>
                   <div class="set-control">
-                    <a class="star-link" href="https://github.com/yyh-001/DSH-X" target="_blank" rel="noreferrer"
+                    <a class="star-link" href="https://github.com/duqingyude/DSH-X" target="_blank" rel="noreferrer"
                        title="在 GitHub 上给 DSH-X 点个 Star" data-i18n-title="在 GitHub 上给 DSH-X 点个 Star">
                       <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 1.7l1.93 3.91 4.32.63-3.12 3.04.73 4.3L8 11.55l-3.86 2.03.73-4.3L1.75 6.24l4.32-.63z"/></svg>
                       <span>Star</span>
@@ -1261,7 +1239,7 @@
   "用 Chrome/Edge 的独立窗口打开：没有地址栏和标签栏。": "Opens in a standalone Chrome/Edge window: no address bar or tab strip.",
   "启动器自己开一个窗口承载 dsh 界面，关窗口只是藏起来；没有原生外壳（源码运行）时退回标签页。": "The launcher hosts the dsh UI in its own window; closing it only hides the window. Falls back to a tab when there is no native shell (running from source).",
   "用系统默认浏览器的标签页打开。": "Opens in a tab of your default browser.",
-  "当前预览使用浏览器标签页。": "This preview opens in a browser tab.",
+  "当前外壳没有独立桌面窗口，会改用系统浏览器打开。": "This shell has no separate desktop window, so dsh opens in the system browser.",
   "已保存。下次打开 dsh 就走新的方式。": "Saved. The next time dsh opens it uses the new way.",
   "更新下载源": "Update download source",
   "网络代理": "Network proxy",
@@ -1625,13 +1603,13 @@
   "外壳版本": "Shell version",
   "DSH-X 核心": "DSH-X core",
   "核心更新检查失败：{message}": "Core update check failed: {message}",
-  "核心 {latest} 需要新版外壳（Electron {electron}）后才能安装。": "Core {latest} needs a newer shell (Electron {electron}) before it can be installed.",
+  "核心 {latest} 需要更新外壳（至少 {shell}）后才能安装。": "Core {latest} needs a newer shell (at least {shell}) before it can be installed.",
   "已是最新版本（核心 {core}，外壳 {shell}）。": "Already up to date (core {core}, shell {shell}).",
   "更新核心": "Update core",
   "核心更新失败：{message}。可以重试，或到发布页下载完整安装包。": "Core update failed: {message}. Retry, or download the full installer from the releases page.",
   "正在替换核心文件，启动器会重启…": "Replacing core files; the launcher will restart…",
-  "本次只更新核心（约 12 MB 的 npm 包），外壳和 Electron 不变。": "Only the core (about 12 MB from npm) is updated; the shell and Electron stay unchanged.",
-  "本次只需下载约 {size} MB（核心增量），外壳和 Electron 不变。": "Only about {size} MB (core delta) is downloaded; the shell and Electron stay unchanged.",
+  "本次只更新核心（约 12 MB 的 npm 包），外壳不变。": "Only the core (about 12 MB from npm) is updated; the shell stays unchanged.",
+  "本次只需下载约 {size} MB（核心增量），外壳不变。": "Only about {size} MB (core delta) is downloaded; the shell stays unchanged.",
   "查看当前版本并检查更新。": "See the current version and check for updates.",
   "正在检查…": "Checking…",
   "发现新版本 {latest}，正在打开更新窗口…": "Version {latest} is available. Opening the update dialog…",
@@ -1640,7 +1618,7 @@
   "核心已是最新。这个安装形态（deb / macOS）不支持外壳自更新，换外壳请到发布页下载新的安装包。": "The core is up to date. This install (deb / macOS) cannot self-update the shell; download the new installer from the releases page.",
   "DSH-X 外壳": "DSH-X shell",
   "更新外壳到 {latest}": "Update the shell to {latest}",
-  "外壳更新会替换整个安装包（Electron 和启动器代码），安装完成后会自动打开。": "The shell update replaces the whole installer (Electron and launcher code) and reopens automatically.",
+  "外壳更新会替换整个安装包（外壳程序本身和图标、托盘等资源），安装完成后会自动打开。": "The shell update replaces the whole installer (the shell program and its resources) and reopens automatically.",
   "正在下载外壳更新…": "Downloading the shell update…",
   "正在下载外壳更新 {pct}%": "Downloading the shell update: {pct}%",
   "外壳更新已下载，安装后启动器会重启。": "The shell update is downloaded; the launcher restarts after installing.",
@@ -1878,7 +1856,8 @@
   "留空 = 自动从 PATH 查找": "Leave blank to find it from PATH",
   "正在保存…": "Saving…",
   "版本未知": "version unknown",
-  "源码运行：dsh 固定用启动它的 Node（{path}，{version}）。": "Running from source: dsh always uses the Node that started it ({path}, {version}).",
+  "由外壳提供：{path}（{version}）。": "Provided by the shell: {path} ({version}).",
+  "要换 Node 请在外壳设置里指定。": "To change the Node, set it in the shell settings.",
   "现在用系统 Node：{path}（{version}）。": "Using the system Node: {path} ({version}).",
   "现在用启动器自带的 Node（{version}）。": "Using the launcher's bundled Node ({version}).",
   "系统里没找到 Node。": "No system Node found.",
@@ -2458,14 +2437,8 @@
     const fromLauncher = launchQuery.has('launch') || launchQuery.has('ask')
     // 更新弹窗只由「更新」按钮打开，启动时不再自动弹；开着的时候不许自动启动
     let askBlocking = false
-    // DSH.exe 的窗口去掉了原生标题栏，窗口按钮和拖动都由页面接管
-    const inAppWindow = launchQuery.has('window')
-    if (inAppWindow) document.documentElement.classList.add('app-window')
-    // macOS 的外壳留着系统的红绿灯（窗口左上角），页面只让出那块位置、不画自己的按钮
-    const macWindow = inAppWindow && launchQuery.get('window') === 'mac'
-    if (macWindow) document.documentElement.classList.add('mac-window')
-    // 清掉查询串时得留住 window=1，否则一刷新就退回浏览器模式的排版
-    const homePath = inAppWindow ? `/?window=${launchQuery.get('window')}` : '/'
+    // 原生外壳没有内嵌窗口，打开的一律是浏览器；回到主页就把查询串清干净
+    const homePath = '/'
     let launchFollowed = false
     let launchRequested = false
 
@@ -3474,18 +3447,6 @@
     document.getElementById('confirmCancel').onclick = () => settleConfirm(false)
     confirmDialogEl.onclick = (event) => { if (event.target === confirmDialogEl) settleConfirm(false) }
 
-    /**
-     * 外壳退出前的询问（见 shell/main.mjs 的 confirmQuitWithInstances）：还有实例在跑，
-     * 退出会先把它们停掉，所以先问一句。确认框正被别的操作占着时等它关掉再弹，
-     * 不然会把那个操作的回答抢走。
-     */
-    async function askQuitWithInstances(count) {
-      while (!confirmDialogEl.hidden) await new Promise((resolve) => setTimeout(resolve, 150))
-      return appConfirm(
-        count === 1 ? t('还有 1 个实例在运行，退出会先停止它。') : t('还有 {count} 个实例在运行，退出会先停止它们。', { count }),
-        { title: t('退出 DSH-X'), okText: t('停止并退出'), cancelText: t('保留运行') },
-      )
-    }
     document.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return
       if (!confirmDialogEl.hidden) {
@@ -3498,32 +3459,6 @@
       else if (!versionManageDialogEl.hidden) void closeVersionManager()
       else if (!launchDialogEl.hidden) closeLaunchEditor()
     })
-
-    // app 窗口模式：最小化/最大化/关闭和拖动标题栏都由页面自己接。ipc 是 wry 注入的桥，
-    // 浏览器里没有这个对象，所以只在这一模式下用。
-    if (inAppWindow && window.ipc) {
-      const ipc = window.ipc
-      document.getElementById('winMin').onclick = () => ipc.postMessage('minimize')
-      document.getElementById('winMax').onclick = () => ipc.postMessage('maximize')
-      document.getElementById('winClose').onclick = () => ipc.postMessage('close')
-      // 标题栏空白处：拖窗口，双击切换最大化（和系统标题栏一致）。落在控件上都不做，
-      // 否则按钮点不动。用 mousedown 的 detail（连击次数）而不是 dblclick——第一次
-      // 按下已经进了系统的拖动循环，第二次的 dblclick 未必还能送达页面。
-      document.querySelector('header').addEventListener('mousedown', (event) => {
-        if (event.button !== 0) return
-        if (event.target.closest('button, a, input, select, .select, .internal-tab')) return
-        ipc.postMessage(event.detail >= 2 ? 'maximize' : 'drag')
-      })
-      // 外壳问「还有实例在跑，真要退出吗」：用页面自己的确认框回答，别用系统原生框
-      ipc.onMessage?.((text) => {
-        let value
-        try { value = JSON.parse(text) } catch { return }
-        if (value?.action !== 'confirm-quit') return
-        void askQuitWithInstances(Number(value.instances) || 0).then((ok) => {
-          ipc.postMessage(JSON.stringify({ action: 'quit-confirm', ok: ok === true }))
-        })
-      })
-    }
 
     let launchPluginScope = ''
     let pluginHome = ''
@@ -5873,7 +5808,7 @@
           paintSelfPill()
         }
       })
-      // 外壳（electron-updater）的检查/下载/安装状态：和核心的 selfUpdate 分开
+      // 外壳（自身的更新器）的检查/下载/安装状态：和核心的 selfUpdate 分开
       events.addEventListener('shellUpdate', (event) => {
         let state
         try { state = JSON.parse(event.data) } catch { return }
@@ -6073,7 +6008,7 @@
       }
     }
     /**
-     * 外壳/Electron 更新：electron-updater 下载安装包，静默安装后自动打开新版。
+     * 外壳更新：交给外壳自己的更新器（cargo-packager-updater），安装后自动打开新版。
      * 核心（resources/core / core/current）的 npm 更新走 startAppUpdate。
      */
     async function startShellUpdate(btn) {
@@ -6108,7 +6043,7 @@
     }
 
     /**
-     * 核心更新：从 npm 下载 dsh-x-core-*，只换核心目录，外壳和 Electron 不动。
+     * 核心更新：从 npm 下载 fork.json 里的核心包，只换核心目录，外壳不动。
      * 下载完成 → 复制到 core/current 或起替换助手 → 外壳退出重启。
      */
     async function startAppUpdate(btn) {
@@ -6174,13 +6109,11 @@
           if (shellReady) {
             aboutUpdateHintEl.textContent = t('发现外壳新版本 {latest}，正在打开更新窗口…', { latest: shellState.latest || '' })
             showAsk({ dsh: null, shell: shellState, self: coreReady ? { current: data.current, latest: data.app?.latest, url: data.url } : null })
-          } else if (data.npm) {
-            aboutUpdateHintEl.textContent = t('npm 安装的版本请用 npm update -g @yyh001/dsh-x 更新。')
           } else if (coreReady) {
             aboutUpdateHintEl.textContent = t('发现新版本 {latest}，正在打开更新窗口…', { latest: data.app?.latest || data.latest })
             showAsk({ dsh: null, self: { current: data.current, latest: data.app?.latest || data.latest, url: data.url } })
-          } else if (data.app?.reason === 'electron') {
-            aboutUpdateHintEl.textContent = t('核心 {latest} 需要新版外壳（Electron {electron}）后才能安装。', { latest: data.app.latest || '', electron: data.app.electron || '' })
+          } else if (data.app?.reason === 'shell') {
+            aboutUpdateHintEl.textContent = t('核心 {latest} 需要更新外壳（至少 {shell}）后才能安装。', { latest: data.app.latest || '', shell: data.app.shell || '' })
           } else if (shellState?.status === 'error') {
             // 核心已经是最新，但外壳检查失败（常见：发布页还没有 latest.yml）
             aboutUpdateHintEl.textContent = t('核心已是最新；外壳更新检查失败：{message}', { message: shellState.error || '' })
@@ -6327,7 +6260,7 @@
           shell.latest || t('最新'),
           ready ? t('安装并重启') : downloading ? t('正在下载…') : t('更新外壳到 {latest}', { latest: shell.latest || '' }),
           (event) => { void startShellUpdate(event.currentTarget) },
-          t('外壳更新会替换整个安装包（Electron 和启动器代码），安装完成后会自动打开。'),
+          t('外壳更新会替换整个安装包（外壳程序本身和图标、托盘等资源），安装完成后会自动打开。'),
         )
         askShellButton = shellRow.action
         askShellButton.disabled = downloading
@@ -6368,16 +6301,16 @@
           askNoteEl.hidden = false
           askNoteEl.textContent = t('新版本已下载，安装后启动器会重启。')
         } else if (appAvailable) {
-          // 核心更新：只换核心目录，外壳和 Electron 不动
+          // 核心更新：只换核心目录，外壳不动
           askNoteEl.hidden = false
           askNoteEl.textContent = sizeMb
-            ? t('本次只需下载约 {size} MB（核心增量），外壳和 Electron 不变。', { size: sizeMb })
-            : t('本次只更新核心（约 12 MB 的 npm 包），外壳和 Electron 不变。')
+            ? t('本次只需下载约 {size} MB（核心增量），外壳不变。', { size: sizeMb })
+            : t('本次只更新核心（约 12 MB 的 npm 包），外壳不变。')
         }
         // 自动更新不管用时的退路：直接给发布页，自己挑对应平台的安装包。
         const manual = document.createElement('a')
         manual.className = 'ghost'
-        manual.href = 'https://github.com/yyh-001/DSH-X/releases/latest'
+        manual.href = 'https://github.com/duqingyude/DSH-X/releases/latest'
         manual.target = '_blank'
         manual.rel = 'noreferrer'
         manual.textContent = t('手动下载')
@@ -6666,9 +6599,12 @@
     }
     const openModeEl = document.getElementById('openMode')
     const openModeHint = document.getElementById('openModeHint')
-    let internalTabsAvailable = false
-    const describeOpenMode = (mode) => mode === 'internal' && !internalTabsAvailable
-      ? t('内部标签页需使用新版 DSH-X 桌面端；当前使用浏览器标签页。')
+    // 有没有「独立桌面窗口」这一项由外壳决定（原生外壳没有内嵌窗口，服务端不给这一项）
+    let openModeWindowSupported = true
+    // 老设置里存着 window、当前外壳又不支持时，用一句话说清会落到浏览器；
+    // 这一行也保证 onchange 里永远有函数可调（删掉它页面会抛 ReferenceError）。
+    const describeOpenMode = (mode) => mode === 'window' && !openModeWindowSupported
+      ? t('当前外壳没有独立桌面窗口，会改用系统浏览器打开。')
       : ''
     // ---- 跑 dsh 的 Node ----
     const nodeRuntimeEl = document.getElementById('nodeRuntime')
@@ -6686,23 +6622,11 @@
       systemNodePathEl.hidden = savedNodeRuntime !== 'system'
       const fmt = (node) => node && node.version ? `v${node.version}` : t('版本未知')
       const lines = []
-      if (info.selectable === false) {
-        lines.push(t('源码运行：dsh 固定用启动它的 Node（{path}，{version}）。', { path: info.effective?.path || '', version: fmt(info.effective) }))
-      } else {
-        if (info.effective?.kind === 'system') {
-          lines.push(t('现在用系统 Node：{path}（{version}）。', { path: info.effective.path, version: fmt(info.effective) }))
-        } else {
-          lines.push(t('现在用启动器自带的 Node（{version}）。', { version: fmt(info.effective) }))
-        }
-        if (info.configured === 'system') {
-          if (!info.system) lines.push(t('系统里没找到 Node。'))
-          else if (info.pending) lines.push(t('重启启动器后改用 {path}（{version}）。', { path: info.system.path, version: fmt(info.system) }))
-        } else if (info.pending) {
-          lines.push(t('重启启动器后改回启动器自带的 Node。'))
-        }
-        if (info.requirement && ((info.configured === 'system' && info.systemTooOld) || info.effectiveTooOld)) {
-          lines.push(t('它低于 dsh 要求的 {version}，可能起不来。', { version: `v${info.requirement}` }))
-        }
+      // 这一项由外壳决定（它找到 Node 后通过 DSH_RUNTIME_NODE 交给核心），页面只如实回报
+      lines.push(t('由外壳提供：{path}（{version}）。', { path: info.effective?.path || '', version: fmt(info.effective) }))
+      if (info.selectable === false) lines.push(t('要换 Node 请在外壳设置里指定。'))
+      if (info.requirement && info.effectiveTooOld) {
+        lines.push(t('它低于 dsh 要求的 {version}，可能起不来。', { version: `v${info.requirement}` }))
       }
       nodeRuntimeHint.textContent = lines.join('')
       // 自绘下拉不会跟着原生 select.value 走，回填后手动同步一次
@@ -6788,7 +6712,7 @@
     }
 
     /**
-     * 内置浏览器：回显 + 可用性。browserHost 只有带上浏览器数据能力的 Electron 外壳才有，
+     * 内置浏览器：回显 + 可用性。browserHost 只有带上浏览器数据能力的原生外壳才有，
      * 浏览器模式 / 旧外壳整组禁用并说明原因；清理按钮的忙碌状态也在这里收口。
      */
     function showBrowserPrefs(data) {
@@ -6872,18 +6796,17 @@
         showNodeRuntimeSettings(data)
       }
       if ('openMode' in data) {
-        internalTabsAvailable = data.openModeInternal === true
-        const modes = Array.isArray(data.openModes) && data.openModes.length
+        const allModes = Array.isArray(data.openModes) && data.openModes.length
           ? data.openModes
-          : [{ id: 'tab', label: '浏览器标签页' }, { id: 'app', label: '浏览器独立窗口' }, { id: 'window', label: '独立桌面窗口' }, { id: 'internal', label: 'DSH-X 内部标签页' }]
+          : [{ id: 'tab', label: '浏览器标签页' }, { id: 'app', label: '浏览器独立窗口' }, { id: 'window', label: '独立桌面窗口' }]
+        // 原生外壳（shell-rs）没有独立桌面窗口：这一项没得选，直接不列出来，
+        // 老的 settings.json 里存着 window 也不会把下拉弄成空白（下面回落到 tab）。
+        openModeWindowSupported = data.openModeWindow !== false
+        const modes = openModeWindowSupported ? allModes : allModes.filter((item) => item.id !== 'window')
+        const savedMode = String(data.openMode || 'tab')
         openModeEl.innerHTML = modes.map((item) => `<option value="${escapeHtml(item.id)}" data-i18n="${escapeHtml(item.label)}">${escapeHtml(t(item.label))}</option>`).join('')
-        openModeEl.value = String(data.openMode || 'internal')
-        // 选了桌面窗口但当前没有原生外壳（源码运行 / npm start）：如实说明会落到哪里
-        openModeHint.textContent = openModeEl.value === 'internal' && data.openModeInternal === false
-          ? t('内部标签页需使用新版 DSH-X 桌面端；当前使用浏览器标签页。')
-          : openModeEl.value === 'window' && data.openModeWindow === false
-          ? t('当前预览使用浏览器标签页。')
-          : describeOpenMode(openModeEl.value)
+        openModeEl.value = modes.some((item) => item.id === savedMode) ? savedMode : 'tab'
+        openModeHint.textContent = describeOpenMode(savedMode)
       }
       if ('proxyMode' in data || 'proxyUrl' in data) {
         const list = Array.isArray(data.proxyModes) && data.proxyModes.length
@@ -7082,7 +7005,7 @@
     }
 
     /**
-     * 清内置浏览器的数据：缓存 / 全部。真正的 Electron 调用在外壳（host.browser），
+     * 清内置浏览器的数据：缓存 / 全部。真正的调用在外壳（host.browser），
      * 管理页只发请求；「全部」先走页面自己的确认框，不用系统原生框。
      */
     async function clearBrowserData(kind) {
@@ -9308,6 +9231,5 @@
   <script src="/idle.js" defer></script>
   <script src="/mascot.js" defer></script>
   <script src="/water.js" defer></script>
-  <script src="/internal-tabs.js" defer></script>
 </body>
 </html>
