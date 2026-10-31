@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 
 export const ROOT = fileURLToPath(new URL('..', import.meta.url))
 export const PKG = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
-// 发行包只用来取 npm（软件本体已经改用 Electron 自带的 Node，不再发 node.exe）；
+// 发行包只用来取 npm（跑 dsh 的 node 用系统的，不再发 node.exe）；
 // 这份缓存还留着，是为了两个平台的构建脚本共用、并且能离线重打。
 export const NODE_VERSION = process.env.DSH_NODE_VERSION || '22.19.0'
 // 便携目录兜底的那份 pnpm：要读得动现代 profile —— lockfile 9.0、pnpm-workspace.yaml
@@ -39,6 +39,10 @@ const APP_FILES = [
   'settings.js',
   'proxy.js',
   'platform.js',
+  // 发布身份（appId / 更新源 / 核心包名）：server.js / core-npm.js / platform.js 都 import 它。
+  'fork.js', 'fork.json',
+  // 外壳把 host 换成 HTTP 桥之后，start.js 会 import 它；漏了核心一启动就 ERR_MODULE_NOT_FOUND（打过一次包才发现）。
+  'host-remote.js',
   'filemanager.js',
   'filemanager-base.js',
   'plugins.js',
@@ -130,7 +134,7 @@ export async function copyAppFiles(out) {
 /**
  * 把 npm 从解压好的 node 发行包拷进 nodeDir/node_modules。
  *
- * 只拷 npm：corepack 以前跟着 node.exe 一起发，现在 dsh 子进程用 Electron 自带的 Node，
+ * 只拷 npm：corepack 以前跟着 node.exe 一起发，现在 dsh 子进程用系统 Node，
  * corepack 又依赖 node 本体，带进来只会多 1MB 死代码。pnpm 由 copyPnpm 另外准备。
  */
 export async function copyNpmModules(modulesSrc, nodeDir) {

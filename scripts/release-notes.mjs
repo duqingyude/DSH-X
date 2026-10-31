@@ -16,6 +16,8 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 
+import { APP_REPO } from '../fork.js'
+
 const SECTIONS = [
   ['feat', '新增功能', 'New Features'],
   ['perf', '体验优化', 'Improvements'],
@@ -73,7 +75,7 @@ if (unsorted.length) {
   out.push(...unsorted.map((text) => `- ${text}`), '')
 }
 
-out.push(`Full Changelog: [${from}...${tag}](https://github.com/yyh-001/DSH-X/compare/${from}...${tag})`, '')
+out.push(`Full Changelog: [${from}...${tag}](https://github.com/${APP_REPO}/compare/${from}...${tag})`, '')
 out.push('---', '', '<a id="en"></a>', '', '## English', '')
 for (const [, , en] of SECTIONS) {
   out.push(`### ${en}`, '', '- ', '')

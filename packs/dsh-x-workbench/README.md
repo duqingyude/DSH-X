@@ -2,7 +2,7 @@
 
 DSH-X 的第二套整合包：**把 [dsh-tauri 桌面版](https://github.com/dsh-tauri/deepseek-harness-desktop) 最常用的几项能力，在纯 dsh 生态里凑齐；再把 [ZCode](https://github.com/zai-org/ZCode) 的两份通用技能带过来。** 装它 = 得到一个独立 profile（默认名 `workbench`），和现有环境互不打扰。
 
-> 为什么不是直接装 dsh-tauri 的插件：dsh-tauri 的 12 个内置插件都声明了 `external: ["dsh-tauri/client"]`，依赖 Tauri 宿主桥，在纯 dsh（包括 DSH-X 的 Electron 壳）里加载不到模块。所以这里选的是生态里同能力的独立插件，不是移植。
+> 为什么不是直接装 dsh-tauri 的插件：dsh-tauri 的 12 个内置插件都声明了 `external: ["dsh-tauri/client"]`，依赖 Tauri 宿主桥，在纯 dsh（包括 DSH-X 的管理页和 dsh 实例页面）里加载不到模块。所以这里选的是生态里同能力的独立插件，不是移植。
 
 ## 里面有什么
 
@@ -21,7 +21,7 @@ DSH-X 的第二套整合包：**把 [dsh-tauri 桌面版](https://github.com/dsh
 | 技能 | 干什么 | 来源 |
 |---|---|---|
 | `agent-browser` | 浏览器自动化 CLI：导航、填表、点击、截图、抓数据、测 Web 应用；模型按 `agent-browser` 命令驱动 | ZCode 收录自 vercel-labs/agent-browser（Apache-2.0） |
-| `electron` | 通过 Chrome DevTools Protocol 驱动 Electron 应用（VS Code、Slack 等）；对 DSH-X 自己的 Electron 壳同样适用 | 同上（ZCode 的 `electron` 技能） |
+| `electron` | 通过 Chrome DevTools Protocol 驱动 Electron 应用（VS Code、Slack 等） | 同上（ZCode 的 `electron` 技能） |
 
 `agent-browser` / `electron` 需要本机有 CLI：`npm i -g agent-browser`、`brew install agent-browser` 或 `cargo install agent-browser`，也可以直接 `npx agent-browser`。技能目录里附了完整参考文档和脚本模板，模型按需读，不会一次性灌进上下文。
 
