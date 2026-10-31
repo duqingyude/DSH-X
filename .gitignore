@@ -1,6 +1,8 @@
 data/
 node/
 node_modules/
+# Rust 外壳的编译产物（cargo build 会写几 GB），Cargo.lock 要入库
+shell-rs/target/
 release/
 vendor/
 *.log

@@ -1,0 +1,33 @@
+# cargo-packager 的配置：Rust 外壳的四个产物（Windows NSIS / macOS dmg / Linux AppImage + deb）。
+# 路径都相对这个文件（shell-rs/）：脚本 scripts/pack-rs.mjs 先把核心层铺到 ../release/rs-stage/core，
+# 再从这里把它打进安装包。
+#
+# 身份字段（identifier）必须和根目录 fork.json 的 appId 相等——两处都写是因为 cargo-packager
+# 只认静态配置；pack-rs.mjs 与 test/fork-identity.test.mjs 会核对，改身份时两处一起改（§11.8）。
+# version 同理：必须等于 Cargo.toml 的 package.version，脚本校验。
+name = "dsh-x"
+product_name = "DSH-X"
+version = "0.1.24"
+identifier = "io.github.duqingyude.dsh-x"
+description = "DSH-X 原生外壳：托盘 + egui 面板 + 本机桥"
+authors = ["duqingyude"]
+homepage = "https://github.com/duqingyude/DSH-X"
+out_dir = "../release/packager"
+
+# 二进制由 pack-rs.mjs 先 cargo build --release 出来；这里只声明路径，NSIS 会自己补 .exe。
+binaries_dir = "target/release"
+binaries = [{ path = "dsh-x", main = true }]
+icons = ["../assets/icon.ico", "../assets/icon.png"]
+
+# 核心层：resources 在 NSIS / AppImage 里落在可执行文件旁边的 core/，deb 落在 usr/lib/core，
+# macOS 落在 .app 的 Contents/Resources/core——supervisor::core_dir 四个候选位置都认。
+resources = [{ src = "../release/rs-stage/core", target = "core" }]
+
+[nsis]
+# 每用户安装：不需要管理员权限，装到 %LOCALAPPDATA%\Programs\DSH-X，与旧 Electron 版同路径（替换关系）。
+installer_mode = "currentUser"
+
+[macos]
+# 与 Electron 版一致：只有 ad-hoc 签名（拿不到 Developer ID 的 arm64 包会被 Gatekeeper 判成已损坏），
+# 所以外壳自更新在 mac 上先不提供。
+signing_identity = "-"
