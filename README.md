@@ -42,7 +42,62 @@
 - 🎨 **外观** — 浅色 / 深色主题、透明度、开场与启动项动效，以及独立的背景和大肥鱼开关。
 - 🔄 **更新与恢复** — 自更新、故障恢复、可设置保留数量的旧版本清理；启动项当前与上一次使用的版本额外保留。
 - ⚙️ **桌面系统开关** — 硬件加速、自动下载更新（安装手动确认）、任务通知与提示音、关窗口隐藏到托盘、防休眠。
-- 💻 **Windows / macOS / Linux** — 三个平台的安装包，支持托盘 / 菜单栏常驻和开机自启，自带 npm / pnpm 包装。
+- 💻 **Windows / macOS / Linux** — 三个平台的安装包，支持托盘 / 菜单栏常驻和开机自启；运行 dsh 用系统 Node，npm / pnpm 由启动器随包提供包装。
+
+## 设计
+
+### 为什么不用 Electron
+
+- **体积与内存**：Electron 版安装包是 90 MB 级，还要常驻一个 Chromium；现在的 Windows 安装包约 15 MB，界面用系统已有的浏览器，外壳与核心各一个进程。
+- **启动体验**：现在双击**没有任何窗口**——不弹面板、不弹控制台，核心报出管理页地址后直接用系统浏览器打开；Electron 版要先起窗口，再在窗口里加载页面。
+- **安全面**：不再内置 Chromium，也就没有内嵌浏览器分区、证书例外、缓存清理这些要一直维护的东西（这些能力现在直接移除，见下表）。管理页仍然只监听本机并校验 Origin / Host。
+- **更新粒度**：业务与页面都在核心（发 npm 包，几 MB），只有外壳二进制变了才需要重新下载安装包。
+- **版本约束**：dsh 的 node addon 对 Electron 运行时做指纹校验，外壳只能钉在少数几个 Electron 版本上，等于把外壳的升级节奏和 dsh 上游绑死；换成系统 Node 之后这层约束没有了。
+
+### 现在的架构
+
+```
+DSH-X.exe（Rust 外壳：单实例 / 托盘 / 面板 / 本机通道 / 更新器）
+  │  spawn（CREATE_NO_WINDOW，不留控制台）
+  ▼
+node start.js（核心：管理页后端与全部业务：版本 / 插件 / 整合包 / 同步 / MCP / 技能）
+  │  管理页 http://127.0.0.1:<端口>  →  系统浏览器
+
+外壳 ⇄ 核心：一条本机套接字（Windows 命名管道 / Unix 域套接字），帧 = 4 字节长度前缀 + JSON
+  ↑ 核心调外壳：打开页面、系统通知、文件对话框、剪贴板、退出、重启
+  ↓ 外壳调核心：面板模型（panel/state）、起停启动项（panel/action）、改系统开关（panel/settings）
+```
+
+- **外壳只做高频操作**：起停重启启动项、看状态与日志、打开管理页、六个系统开关、切换语言。版本管理、插件市场、整合包、MCP / 技能仍然只在管理页里做——外壳是遥控器，不做第二套管理台。
+- **设置的唯一写者是核心**：面板点开关也发给核心，核心写 `settings.json` 后再把新模型推回来，避免两边各写一半、互相覆盖。
+- **通道不占端口、不用 token**：连上后比对对端 pid（Windows 命名管道取客户端 pid，Linux / mac 用 0600 的域套接字）。外壳退出就是连接 EOF，核心立刻跟着退出，不需要轮询。
+- **默认没有任何窗口**：面板藏在托盘后面，只有托盘点「打开面板」或核心反复起不来时才出现；关窗默认收进托盘、核心继续跑。核心的起停与状态在面板 header 和托盘里都能操作。
+- **两套版本、两条更新通道**：根 `package.json` 是核心版本（发 npm），`shell-rs/Cargo.toml` 是外壳版本（安装包）。核心更新只换数据目录里的 `core/current`，外壳更新才重装安装包。
+- **发布身份集中**：appId、更新源、核心包名、tag 前缀全在根目录 `fork.json`，回贡上游只改这一处。
+
+## 与 Electron 版的变化
+
+| 方面 | 旧版（Electron 外壳） | 现在 |
+|---|---|---|
+| 运行时 | 自带 Chromium + 自带 Node | 系统 Node（22.18+ 的 22 / 24），不再自带 node.exe |
+| 安装包 | 90 MB 级 | 约 15 MB |
+| 启动 | 先起窗口，再在窗口里加载页面 | 无窗口，直接开系统浏览器 |
+| 界面 | 管理页 + 窗口内标签页 | 管理页 + 原生面板（托盘里的窗口） |
+| 系统通知署名 | Windows 上算在 Electron / PowerShell 名下 | 显示 DSH-X（注册自己的 AppUserModelId） |
+| 内嵌浏览器 | 右侧栏浏览器、`sidebar_browser` 工具 | 移除，改用系统浏览器 |
+| 下载 / 权限 / 证书例外 | 外壳里的一整套 UI | 移除（跟内嵌浏览器一起没了） |
+| npm 版 | `npm i -g @yyh001/dsh-x` | 停止发布 |
+
+### 代码层面的改动
+
+- 新增 `shell-rs/`：单实例与启动（`main.rs`）、起停核心（`supervisor.rs`）、面板（`panel.rs`）、托盘（`tray.rs`）、本机通道（`bridge.rs`）、通知（`notify.rs`）、Windows 应用身份（`identity.rs`）、防休眠（`power.rs`）、设置（`prefs.rs`）。
+- 新增 `host-remote.js`：核心侧的代理，把 `setHost()` 的每个成员翻译成一帧 JSON，`server.js` 不用为外壳改一行。
+- 新增 `fork.json` / `fork.js`（发布身份）、`scripts/pack-rs.mjs` + `shell-rs/Packager.toml` + `shell-rs/nsis/`（cargo-packager 出三端安装包；NSIS 模板中英双语、默认跟随系统语言）。
+- 删除 `shell/`（Electron 主进程、preload、窗口内标签页、electron-updater）、`npm-package/`、`electron-builder.config.mjs`、`scripts/pack.mjs` / `pack-mac.mjs` / `pack-npm.mjs` / `electron-prune.mjs` / `mac-signing.mjs`、`public/internal-tabs.js`。
+- `platform.js` 收口：删掉 `IN_ELECTRON` / `NPM_MODE` / `RUNTIME_NODE_ENV`，`RUNTIME_NODE` 一律来自 `DSH_RUNTIME_NODE`（没有就用 `process.execPath`）。
+- `server.js`：去掉内嵌窗口与标签页分支、node 运行时切换（只剩系统 Node）、GitHub 安装包自更新（交给外壳）；新增 `panelState()` / `panelAction()` / `panelSettings()` 供面板反向调用。
+- `apply-update.mjs`：等核心与外壳双双退出再换目录（监督者会在核心退出后自动重启，只等核心会撞上 Windows 的 EBUSY）。
+- 用例：`shell-*` 系用例改成核心侧断言，新增 `host-remote` / `panel-model` / `fork-identity` / `prefs-parity` / `pack-nsis`。
 
 ## 快速开始
 
@@ -53,6 +108,8 @@
 | Windows | Windows 10 及以上，x64 | `dsh-x_<版本>_x64-setup.exe`（NSIS，每用户安装） |
 | macOS | macOS 13 及以上 | `DSH-X_<版本>_aarch64.dmg`（Apple Silicon）/ `DSH-X_<版本>_x64.dmg`（Intel） |
 | Linux | x64；AppImage 依赖 FUSE | `dsh-x_<版本>_x86_64.AppImage` / `dsh-x_<版本>_amd64.deb` |
+
+安装包**不再自带 Node**：三个平台都要机器上有 Node.js 22.18+（22 或 24 都行）。没有的话面板会显示提示，也可以在面板设置里指定 Node 路径。
 
 ### Windows
 
@@ -96,6 +153,7 @@ sha256sum dsh-x_<版本>_x86_64.AppImage                # Linux
 - 设置 → 常规 → **打开 dsh 的方式**，可选系统浏览器或浏览器应用窗口（没有地址栏）。旧设置里的「桌面窗口」已经没有对应实现，会改用系统浏览器。
 - 管理页默认端口为 `3780`，被占用时会顺延。
 - 手机或其他电脑访问 dsh：设置 → 高级设置 → **Web 绑定**选「局域网」，下次启动生效。
+- 托盘图标常驻：菜单按启动项分组给出「打开页面 / 启动 / 停止 / 重启」。托盘「打开面板」打开原生面板——起停核心、看核心输出、改系统开关与语言都在这里；关闭面板默认收进托盘，核心继续跑。
 
 ## 界面预览
 

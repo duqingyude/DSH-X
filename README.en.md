@@ -42,7 +42,62 @@
 - 🎨 **Appearance** — light / dark themes, transparency, opening and launch-entry animations, and separate background and Big Fish switches.
 - 🔄 **Updates and recovery** — self-update, profile recovery and configurable old-version retention; each launch entry's current and previous versions are kept additionally.
 - ⚙️ **Desktop system switches** — hardware acceleration, automatic update download (install manually), task notifications and sound, hide to tray on close, and keep-awake.
-- 💻 **Windows / macOS / Linux** — installers for all three platforms, tray / menu bar operation and launch at login, plus bundled npm / pnpm wrappers.
+- 💻 **Windows / macOS / Linux** — installers for all three platforms, tray / menu bar operation and launch at login; dsh runs on the system Node, with npm / pnpm wrappers shipped by the launcher.
+
+## Design
+
+### Why drop Electron
+
+- **Size and memory**: the Electron build shipped a 90 MB-class installer and kept a Chromium resident. The Windows installer is now about 15 MB and the UI uses the browser the system already has; the shell and the core are one process each.
+- **Startup**: double-clicking now opens **no window at all** — no panel, no console. Once the core prints its console address the default browser opens; the Electron build had to create a window first and load the page inside it.
+- **Attack surface**: no bundled Chromium means no embedded-browser partitions, certificate exceptions or cache cleaners to maintain (those features are gone, see the table below). The console still binds to loopback only and validates Origin / Host.
+- **Update granularity**: business logic and pages live in the core (an npm package, a few MB); only a change to the shell binary needs a new installer download.
+- **Version coupling**: dsh's node addon fingerprints the Electron runtime, which pins the shell to a couple of Electron versions and ties the shell's upgrade cadence to upstream dsh. Using the system Node removes that constraint.
+
+### How it is put together
+
+```
+DSH-X.exe (Rust shell: single instance / tray / panel / local channel / updater)
+  │  spawn (CREATE_NO_WINDOW, no console window)
+  ▼
+node start.js (core: console backend and all business logic: versions / plugins / packs / sync / MCP / skills)
+  │  console at http://127.0.0.1:<port>  →  system browser
+
+shell ⇄ core: one local socket (Windows named pipe / Unix domain socket), frame = 4-byte length prefix + JSON
+  ↑ core calls the shell: open a page, system notification, file dialog, clipboard, exit, relaunch
+  ↓ shell calls the core: panel model (panel/state), start/stop a launch entry (panel/action), change system switches (panel/settings)
+```
+
+- **The shell only does high-frequency work**: start / stop / restart launch entries, watch state and logs, open the console, the six system switches, switch language. Version management, the plugin market, packs, MCP and skills stay in the console — the shell is a remote control, not a second admin UI.
+- **The core is the only writer of settings**: panel switches are forwarded to the core, which writes `settings.json` and pushes a fresh model back, so the two sides can never half-write the same file.
+- **The channel takes no port and no token**: peers are identified by pid (the client pid on Windows named pipes, 0600 domain sockets on Linux / mac). The shell exiting is an EOF on the connection, so the core quits immediately — no polling.
+- **No window by default**: the panel hides behind the tray and only appears from the tray's "Open panel" or when the core keeps failing; closing the window hides it to the tray and the core keeps running. Core start/stop and status are available both in the panel header and the tray menu.
+- **Two versions, two update channels**: the root `package.json` is the core version (published to npm), `shell-rs/Cargo.toml` is the shell version (the installer). A core update only swaps `core/current` in the data directory; only a shell update reinstalls the package.
+- **Release identity lives in one place**: appId, update source, core package name and tag prefix all come from `fork.json` at the repo root.
+
+## Changes from the Electron build
+
+| Area | Old build (Electron shell) | Now |
+|---|---|---|
+| Runtime | bundled Chromium + bundled Node | system Node (22 or 24, 22.18+); no bundled node.exe |
+| Installer | 90 MB-class | about 15 MB |
+| Startup | create a window, then load the page inside it | no window, the system browser opens directly |
+| UI | console + in-window tabs | console + native panel (a window behind the tray) |
+| Notification attribution | shown as Electron / PowerShell on Windows | shown as DSH-X (its own AppUserModelId) |
+| Embedded browser | right sidebar browser, `sidebar_browser` tool | removed; use the system browser |
+| Downloads / permissions / certificate exceptions | a set of shell UIs | removed along with the embedded browser |
+| npm build | `npm i -g @yyh001/dsh-x` | no longer published |
+
+### Code-level changes
+
+- Added `shell-rs/`: single instance and startup (`main.rs`), core supervision (`supervisor.rs`), panel (`panel.rs`), tray (`tray.rs`), local channel (`bridge.rs`), notifications (`notify.rs`), Windows app identity (`identity.rs`), keep-awake (`power.rs`), preferences (`prefs.rs`).
+- Added `host-remote.js`: the core-side proxy that turns each `setHost()` member into one JSON frame, so `server.js` needed no shell-specific changes.
+- Added `fork.json` / `fork.js` (release identity) and `scripts/pack-rs.mjs` + `shell-rs/Packager.toml` + `shell-rs/nsis/` (cargo-packager builds for all three platforms; the NSIS template is bilingual and follows the system language by default).
+- Removed `shell/` (Electron main process, preload, in-window tabs, electron-updater), `npm-package/`, `electron-builder.config.mjs`, `scripts/pack.mjs` / `pack-mac.mjs` / `pack-npm.mjs` / `electron-prune.mjs` / `mac-signing.mjs` and `public/internal-tabs.js`.
+- `platform.js` was tightened: `IN_ELECTRON` / `NPM_MODE` / `RUNTIME_NODE_ENV` are gone, and `RUNTIME_NODE` always comes from `DSH_RUNTIME_NODE` (falling back to `process.execPath`).
+- `server.js`: dropped the embedded-window and tab branches, the Node runtime switch (system Node only) and the GitHub installer self-update (now the shell's job); added `panelState()` / `panelAction()` / `panelSettings()` for the panel's reverse calls.
+- `apply-update.mjs` waits for both the core and the shell to exit before swapping directories (the supervisor restarts the core on exit, so waiting for the core alone hits Windows EBUSY).
+- Tests: the `shell-*` suites now assert on the core side; new `host-remote` / `panel-model` / `fork-identity` / `prefs-parity` / `pack-nsis` suites.
 
 ## Getting started
 
@@ -53,6 +108,8 @@ Download the installer for your platform from [Releases](https://github.com/duqi
 | Windows | Windows 10 or later, x64 | `dsh-x_<version>_x64-setup.exe` (NSIS, per-user) |
 | macOS | macOS 13 or later | `DSH-X_<version>_aarch64.dmg` (Apple Silicon) / `DSH-X_<version>_x64.dmg` (Intel) |
 | Linux | x64; AppImage needs FUSE | `dsh-x_<version>_x86_64.AppImage` / `dsh-x_<version>_amd64.deb` |
+
+The installer **no longer bundles Node**: all three platforms need Node.js 22.18+ on the machine (22 or 24). If it is missing the panel says so, and you can point it at a Node binary in the panel settings.
 
 ### Windows
 
@@ -96,6 +153,7 @@ sha256sum dsh-x_<version>_x86_64.AppImage              # Linux
 - Settings → General → **How dsh opens** offers the system browser or a browser app window (no address bar). The old "desktop window" mode has no implementation any more and falls back to the system browser.
 - The manager defaults to port `3780` and tries the next port if occupied.
 - To reach dsh from another device: Settings → Advanced → **Web binding** → LAN, applied on the next start.
+- The tray icon stays resident and groups its menu by launch entry with "Open page / Start / Stop / Restart". The tray's "Open panel" shows the native panel for starting and stopping the core, watching core output and changing system switches and language; closing the panel hides it to the tray and keeps the core running.
 
 ## Screenshots
 
