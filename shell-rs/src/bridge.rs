@@ -304,7 +304,7 @@ fn notify(ctx: &BridgeCtx, input: &Value) {
         .or_else(|| input.get("message"))
         .and_then(Value::as_str)
         .unwrap_or("");
-    crate::notify::send(title, body);
+    crate::notify::send(title, body, prefs.notification_sound);
 }
 
 fn dialog(input: &Value) -> Value {

@@ -37,7 +37,14 @@ winit = "0.30"
 interprocess = "2.4.7"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dwm"] }
+# Registry + Shell 是「应用身份」用的：通知的署名与图标由 AppUserModelID 决定（见 identity.rs）。
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Dwm",
+  "Win32_System_Power",
+  "Win32_System_Registry",
+  "Win32_UI_Shell",
+] }
 
 [profile.release]
 opt-level = "s"

@@ -7,6 +7,7 @@
 // 外壳只提供窗口、托盘、系统能力和一条让核心回调自己的本机通道（§6 的契约）。
 
 mod bridge;
+mod identity;
 mod notify;
 mod panel;
 mod prefs;
@@ -40,6 +41,13 @@ fn main() {
         return;
     }
 
+    let shell_exe = std::env::current_exe()
+        .map(|path| path.to_string_lossy().to_string())
+        .unwrap_or_default();
+    // 先把应用身份定下来：通知署名与图标都看它（见 identity.rs），而且必须在任何通知之前。
+    #[cfg(windows)]
+    identity::claim(env!("DSH_APP_ID"), env!("DSH_PRODUCT_NAME"), &shell_exe);
+
     let prefs = Prefs::load();
     let node = supervisor::find_node(&prefs);
     let node_version = node
@@ -57,9 +65,6 @@ fn main() {
 
     // 先起通道：核心一启动就会回调（desktop.info / shellUpdate.state），通道没起来它会当成外壳不在。
     let core_pid = Arc::new(std::sync::atomic::AtomicU32::new(0));
-    let shell_exe = std::env::current_exe()
-        .map(|path| path.to_string_lossy().to_string())
-        .unwrap_or_default();
     let shell_ipc = match bridge::start(BridgeCtx {
         status: status.clone(),
         prefs: prefs_shared.clone(),
