@@ -133,8 +133,18 @@ test('dsh 起不来时，接口的报错和状态里都带着它退出前的输�
   const base = `http://127.0.0.1:${port}`
   const manager = spawn(process.execPath, [join(ROOT, 'server.js')], {
     cwd: ROOT,
-    // 设置、日志、dsh 家目录全部指进临时目录，别碰这台机器上真正的那份
-    env: { ...process.env, PORT: String(port), APPDATA: join(box, 'appdata'), HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home, '.config') },
+    // 设置、日志、dsh 家目录全部指进临时目录，别碰这台机器上真正的那份。
+    // DSH_PROFILE 是开发和测试的覆盖开关，宿主（在 DSH 里跑测试时）会把自己的 profile
+    // 注进来，那会把默认的 web 顶掉，这里显式清空。
+    env: {
+      ...process.env,
+      PORT: String(port),
+      APPDATA: join(box, 'appdata'),
+      HOME: home,
+      USERPROFILE: home,
+      XDG_CONFIG_HOME: join(home, '.config'),
+      DSH_PROFILE: '',
+    },
     stdio: 'ignore',
   })
   try {
