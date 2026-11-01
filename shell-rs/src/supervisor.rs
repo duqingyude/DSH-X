@@ -1,4 +1,4 @@
-// 起/停/重启核心（就是仓库根上的 start.js）：外壳自己只管窗口、托盘、桥和更新，
+// 起/停/重启核心（就是仓库根上的 start.js）：外壳自己只管窗口、托盘、通道和更新，
 // 业务全在核心的 server.js 里。跨进程之后「实例的端口」只有核心自己知道，所以这里还要
 // 从它的 stdout 里读回管理页地址（server.js 启动时打的 dsh-versions: http://... 那行）。
 
@@ -6,12 +6,24 @@ use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::prefs;
+
+// 只有 Windows 要这个扩展 trait：CREATE_NO_WINDOW 从它来。
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+/// 起子进程时把控制台藏掉。外壳是 GUI 进程，它 spawn 一个控制台程序（node / cmd）时
+/// Windows 会**给子进程新开一个控制台窗口**——用户看到的就是一闪而过的 CMD 黑框。
+/// 所有从外壳起的子进程都要过这里：核心进程、探测版本的 `node --version` 都算。
+fn no_window(command: &mut Command) {
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000);
+}
 
 /// dsh 与主进程要的 Node 下限：低于它的 Node 连 ESM 补丁钩子都装不上（§5）。
 pub const MIN_NODE: (u32, u32, u32) = (22, 18, 0);
@@ -71,11 +83,12 @@ impl Status {
     }
 }
 
-/// 外壳报给核心的几样东西：桥地址、token、自己的 pid 与可执行文件路径（§6 的环境变量表）。
+/// 外壳报给核心的几样东西：本机通道名、自己的可执行文件路径，以及核心自己的 pid
+/// （通道那边按它认对端，见 bridge.rs 的 peer_is_core）。环境变量表见 §6。
 pub struct ShellEnv {
-    pub url: String,
-    pub token: String,
+    pub ipc: String,
     pub exe: String,
+    pub core_pid: Arc<AtomicU32>,
 }
 
 pub struct Supervisor {
@@ -195,8 +208,8 @@ impl Supervisor {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .env("DSH_SHELL_URL", &self.shell.url)
-            .env("DSH_SHELL_TOKEN", &self.shell.token)
+            // 本机通道名：Windows 是命名管道全名，unix 是域套接字路径，核心直接拿去 net.connect。
+            .env("DSH_SHELL_IPC", &self.shell.ipc)
             .env("DSH_SHELL_PID", std::process::id().to_string())
             .env("DSH_SHELL_EXE", &self.shell.exe)
             // 外壳版本与「我懂这组设置」的标记：核心据此回显外壳版本、放开设置页的六个系统开关。
@@ -205,6 +218,9 @@ impl Supervisor {
             .env("DSH_RUNTIME_NODE", &self.node)
             // 核心按打包态运行：核心更新走 npm、安装包自更新交给外壳（见 AGENTS.md）。
             .env("DSH_CORE", "1");
+        // 外壳是 GUI 程序，直接 spawn 控制台程序（node.exe）会另开一个黑框窗口。
+        // CREATE_NO_WINDOW 让核心在后台跑；stdout/stderr 反正走管道，不靠这个控制台。
+        no_window(&mut command);
         // 核心目录里的 node/ 有 npm / pnpm 包装，插件安装要用；用户自己的排在后面（核心侧还会再排）。
         let bundled = self.core_dir.join("node");
         if bundled.exists() {
@@ -223,6 +239,8 @@ impl Supervisor {
             }
         };
         let pid = child.id();
+        // 通道按这个 pid 认对端：别的进程就算摸到管道名，也进不来。
+        self.shell.core_pid.store(pid, Ordering::Relaxed);
         {
             let mut status = self.status.lock().unwrap();
             status.pid = pid;
@@ -235,9 +253,12 @@ impl Supervisor {
                 for line in BufReader::new(stdout).lines().map_while(Result::ok) {
                     this.lock().unwrap().push_line(line.clone());
                     if let Some(url) = parse_manager_url(&line) {
-                        let mut status = this.lock().unwrap();
-                        status.url = url;
-                        status.phase = Phase::Running;
+                        {
+                            let mut status = this.lock().unwrap();
+                            status.url = url.clone();
+                            status.phase = Phase::Running;
+                        }
+                        remember_url(&url);
                     }
                 }
             });
@@ -289,6 +310,36 @@ impl Supervisor {
             Some(status) => Some(format!("退出码 {}", status.code().map(|code| code.to_string()).unwrap_or_default())),
             None => None,
         }
+    }
+}
+
+/// 记下管理页地址：用户再点一次图标（单实例锁把新进程挡下）时要靠它把浏览器叫到已经在跑的那一页。
+fn remember_url(url: &str) {
+    let path = prefs::app_dir().join("shell-url.txt");
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(path, url);
+}
+
+/// 第二个实例被单实例锁挡下时走这里：地址还活着才开浏览器，免得开出一个死页面。
+pub fn open_running_manager() {
+    let path = prefs::app_dir().join("shell-url.txt");
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return;
+    };
+    let url = text.trim();
+    let Some(rest) = url.strip_prefix("http://127.0.0.1:") else {
+        return;
+    };
+    let port = match rest.split('/').next().unwrap_or_default().parse::<u16>() {
+        Ok(port) => port,
+        Err(_) => return,
+    };
+    let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    // 上一轮的外壳可能已经退出了：连不上就当没有，别让用户看到一个空页。
+    if std::net::TcpStream::connect_timeout(&address, Duration::from_millis(400)).is_ok() {
+        let _ = open::that(url);
     }
 }
 
@@ -451,8 +502,33 @@ fn scan_version_managers() -> Option<PathBuf> {
     found.map(|(_, path)| path)
 }
 
+/// 一次启动里 `node --version` 会被问好几遍（找 node 时探测每个候选、面板要显示版本）。
+/// 每次都起一个进程既慢又会闪黑框，所以按路径记住结果——同一个进程里 node 的版本不会变。
+fn version_cache() -> &'static Mutex<std::collections::HashMap<PathBuf, Option<String>>> {
+    static CACHE: std::sync::OnceLock<Mutex<std::collections::HashMap<PathBuf, Option<String>>>> =
+        std::sync::OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+}
+
 pub fn node_version(node: &Path) -> Option<String> {
-    let output = Command::new(node).arg("--version").output().ok()?;
+    // 缓存坏了（别的线程 panic 过）不该让启动失败：直接当空表用。
+    let mut cache = version_cache()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(cached) = cache.get(node) {
+        return cached.clone();
+    }
+    let version = probe_version(node);
+    cache.insert(node.to_path_buf(), version.clone());
+    version
+}
+
+fn probe_version(node: &Path) -> Option<String> {
+    let mut command = Command::new(node);
+    command.arg("--version");
+    // 不藏控制台的话，每次探测都会在屏幕上闪一个 CMD 窗口（GUI 父进程 spawn 控制台程序）。
+    no_window(&mut command);
+    let output = command.output().ok()?;
     if !output.status.success() {
         return None;
     }
@@ -535,24 +611,6 @@ pub fn core_dir() -> Option<PathBuf> {
     None
 }
 
-/// 随机 token：只活在本进程与核心之间，够用即可（不落盘、不出回环地址）。
-pub fn make_token() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or(0);
-    let mut seed = nanos as u64 ^ ((std::process::id() as u64) << 32);
-    let mut token = String::new();
-    for _ in 0..32 {
-        // 经典 xorshift：不是为了密码学强度，是为了别让 token 一眼可猜（它只在本机回环上）。
-        seed ^= seed << 13;
-        seed ^= seed >> 7;
-        seed ^= seed << 17;
-        token.push(char::from(b'a' + (seed % 26) as u8));
-    }
-    token
-}
 
 #[cfg(test)]
 mod tests {
@@ -594,12 +652,5 @@ mod tests {
         assert!(version_score("v22.20.0") > version_score("v22.18.3"));
     }
 
-    #[test]
-    fn token_is_32_lowercase_letters() {
-        let token = make_token();
-        assert_eq!(token.len(), 32);
-        assert!(token.chars().all(|ch| ch.is_ascii_lowercase()));
-        // 同一进程内两次也不能一样：桥的 token 不该有可预测的重放面。
-        assert_ne!(token, make_token());
-    }
+
 }

@@ -16,9 +16,11 @@ const MANAGER_URL = `http://127.0.0.1:${PORT}/`
 // 由原生外壳（DSH.exe / DSH-X.app）拉起时它设这个变量：管理页装进它自己的窗口，托盘也归它，
 // 这里就只剩服务本身，不用再往系统浏览器里开页面。
 const APP_WINDOW = process.env.DSH_APP_WINDOW === '1'
-// 原生外壳（Rust）拉起时它把桥地址和 token 放到环境里：host 成员改走本机 HTTP，
-// 服务和外壳不再同一个进程（§6）。浏览器模式和旧外壳没有这两个变量，走下面原来的路。
-const REMOTE_HOST = remoteHostFromEnv(process.env, { log })
+// 原生外壳（Rust）拉起时它把本机通道名放到环境里：host 成员改走一条本地套接字，
+// 服务和外壳不再同一个进程（§6）。浏览器模式没有这个变量，走下面原来的路。
+// onShellGone：通道 EOF 说明外壳已经没了，核心立刻收摊——比看门狗轮询快，也让
+// 卸载程序马上能删掉自己的目录。
+const REMOTE_HOST = remoteHostFromEnv(process.env, { log, onShellGone: shellGone })
 const LOG_DIR = APP_DIR
 const LOG = join(LOG_DIR, 'manager.log')
 
@@ -40,13 +42,19 @@ function openPage(target = MANAGER_URL) {
 }
 
 /**
- * 让 DSH.exe 把窗口叫到前面。父子之间没有别的 IPC，就约定 stdout 里一行标记：
- * 父进程接着这个管道，看到这行就把窗口显示出来。
+ * 旧 Electron 外壳的唤回通道：父子之间没有别的 IPC，就约定 stdout 里一行标记。
+ * 原生外壳用本机套接字（DSH_SHELL_IPC），不走这里；只有 DSH_APP_WINDOW 的老布局还会用它。
  */
 function requestShow() {
   if (!APP_WINDOW) return false
   process.stdout.write('__DSH_SHOW__\n')
   return true
+}
+
+/** 外壳通道断了：先把服务收干净再退，否则端口和子进程会留在系统里。 */
+function shellGone() {
+  log('外壳通道已断开，核心跟着退出')
+  shutdown().finally(() => process.exit(0))
 }
 
 /** 叫回管理页：有外壳就让它把面板叫到前面，没有就照旧开浏览器标签页。 */
@@ -80,7 +88,8 @@ async function wakeExisting(port = PORT) {
 
 /**
  * 外壳被强杀（任务管理器、卸载程序、崩溃）时，核心会变成孤儿：继续占着管理页端口，
- * 还让卸载程序删不掉自己的目录。每 3 秒看一次 DSH_SHELL_PID，父进程没了就自己收摊。
+ * 还让卸载程序删不掉自己的目录。平时靠通道 EOF 立刻发现（见 shellGone），这里每 3 秒
+ * 看一次 DSH_SHELL_PID 兜底：通道被安全软件掐断、或外壳卡死不肯关套接字时，只有这条还认得出来。
  * 只在原生外壳下开（浏览器模式没有这个变量）；EPERM 说明进程还在、只是打不开，按活着算。
  */
 function watchShell() {
@@ -112,7 +121,7 @@ async function main() {
   // 必须在 startServer 之前装：另一个实例双击启动时会立刻打 /api/wake，
   // 晚一步装就丢掉了那次唤醒（外壳侧等的是一个请求，不是一条 stdout 标记行）。
   if (REMOTE_HOST) {
-    log(`原生外壳桥：${process.env.DSH_SHELL_URL}`)
+    log(`原生外壳通道：${process.env.DSH_SHELL_IPC}`)
     setHost(REMOTE_HOST)
   }
   try {

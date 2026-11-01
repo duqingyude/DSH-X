@@ -3,7 +3,7 @@ name = "dsh-x"
 version = "0.1.24"
 edition = "2021"
 rust-version = "1.82"
-description = "DSH-X 原生外壳：托盘 + egui 面板 + 本机桥"
+description = "DSH-X 原生外壳：托盘 + egui 面板 + 本机通道"
 publish = false
 
 [[bin]]
@@ -12,10 +12,11 @@ path = "src/main.rs"
 
 [build-dependencies]
 serde_json = "1"
+# 把 assets/icon.ico 编进 exe 的资源段（见 build.rs / icon.rc）。
+embed-resource = "3"
 
 [dependencies]
 eframe = "0.37"
-tiny_http = "0.12"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 single-instance = "0.3"
@@ -24,8 +25,19 @@ open = "5"
 rfd = "0.17"
 arboard = "3"
 tray-icon = "0.26"
-# 托盘图标要从 assets/icon.png 缩出来；只开 png，别把整套编解码器拖进来。
+# 托盘与窗口图标都从 assets/tray.png 解码再缩放，三个平台都要用到，别放进 cfg(windows)。
+# 只开 png，别把整套编解码器拖进来。
 image = { version = "0.25", default-features = false, features = ["png"] }
+# 面板默认不该出现在屏幕上，可 eframe 第一帧画完会无条件把窗口显示出来（防白闪），
+# 用 DWM 的 cloak 属性在窗口级别隐身，能挡住那一帧的闪现。和 eframe 用同一个 winit，
+# 不然拿不到同一个 Window 类型。
+winit = "0.30"
+# 本机通道：一个 API 同时覆盖 Windows 命名管道与 unix 域套接字，省得写两套。
+# 只用到 std 阻塞接口（不加 async / tokio feature），每帧一个线程就够用了。
+interprocess = "2.4.7"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dwm"] }
 
 [profile.release]
 opt-level = "s"

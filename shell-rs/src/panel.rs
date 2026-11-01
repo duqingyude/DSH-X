@@ -27,6 +27,22 @@ pub struct Panel {
     pub tray: Option<crate::tray::Tray>,
     /// 用户真的要走（托盘退出 / 桥喊 exit），此时关窗不该被「关闭到托盘」拦下来。
     pub quitting: bool,
+    /// 已经替用户开过的管理页地址。面板默认不弹，核心报了地址就直接开浏览器；
+    /// 记地址而不是记一个 bool，是为了核心换端口重启后还能再开一次对的页面。
+    pub opened_url: String,
+    /// 核心彻底起不来时自动把面板亮出来（这时日志是唯一线索），只亮一次。
+    pub failure_shown: bool,
+    /// 用户有没有要过面板（托盘「打开面板」/ 核心起不来）。
+    ///
+    /// 为什么要这个标记：eframe 自己在第一帧画完后无条件 window.set_visible(true)
+    /// （eframe-0.37.0/src/native/epi_integration.rs:441-453 的 post_rendering，
+    /// 本来是防白闪的），NativeOptions 里传 visible(false) 压不住它。所以每帧
+    /// 在 logic 末尾主动发一次 Visible(false)，直到用户真的要窗口——这条命令在
+    /// post_rendering 之后处理（wgpu_integration.rs:874 vs :883），能把它盖回去。
+    pub wants_window: bool,
+    /// Windows：DWM 隐身开关（窗口 + 现在是不是隐身中）。见 cloak() 的注释。
+    #[cfg(windows)]
+    pub cloak: Option<(std::sync::Arc<winit::window::Window>, bool)>,
 }
 
 impl Panel {
@@ -34,6 +50,7 @@ impl Panel {
         while let Ok(event) = self.events.try_recv() {
             match event {
                 Event::Show => {
+                    self.wants_window = true;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                 }
@@ -63,6 +80,7 @@ impl Panel {
         for action in crate::tray::take() {
             match action {
                 Action::Show => {
+                    self.wants_window = true;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                 }
@@ -101,6 +119,51 @@ impl Panel {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
+        }
+    }
+
+    /// 面板默认藏着：用户双击启动器想要的是管理页，不是另一个窗口。
+    /// 核心把管理页地址打出来（status.url）就开默认浏览器；核心反复起不来才把面板亮出来。
+    fn auto_open(&mut self, ctx: &egui::Context) {
+        let status = match self.status.lock() {
+            Ok(status) => status.clone(),
+            Err(_) => return,
+        };
+        if status.phase == Phase::Running && !status.url.is_empty() && status.url != self.opened_url {
+            self.opened_url = status.url.clone();
+            if let Err(error) = open::that(&status.url) {
+                // 开浏览器失败不致命：托盘里的「打开管理页」还能再试一次。
+                if let Ok(mut status) = self.status.lock() {
+                    status.push_line(format!("打不开浏览器：{error}"));
+                }
+            }
+        }
+        if !self.failure_shown && status.phase == Phase::Failed {
+            self.failure_shown = true;
+            self.wants_window = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+    }
+
+    /// Windows：让窗口在 DWM 里隐身（cloak），而不是只隐藏窗口。
+    ///
+    /// 为什么要这么绕：eframe 第一帧画完会无条件 window.set_visible(true)
+    /// （eframe-0.37.0/src/native/epi_integration.rs:441-453，本意是防白闪），
+    /// 而我们的 Visible(false) 命令在它之后才处理，中间隔着一帧——实测窗口会
+    /// 真真切切闪一下（采样到 ~44ms 可见）。cloak 是 DWM 层面的属性，窗口
+    /// 「可见」也不参与合成，从创建那一刻起就不会出现在屏幕上。
+    #[cfg(windows)]
+    fn cloak(&mut self) {
+        let Some((window, cloaked)) = &mut self.cloak else {
+            return;
+        };
+        let want = !self.wants_window;
+        if *cloaked == want {
+            return;
+        }
+        if set_cloaked(window, want) {
+            *cloaked = want;
         }
     }
 
@@ -197,6 +260,7 @@ impl eframe::App for Panel {
         // 事件必须在画之前处理：核心喊「打开管理页」时窗口可能正藏着。
         self.apply_events(ctx);
         self.apply_tray(ctx);
+        self.auto_open(ctx);
         // 「关闭到托盘」是旧外壳就有的开关：点 × 只藏窗口，核心继续跑。
         // 真正要走的情况（托盘退出 / 核心请求重启）会先把 quitting 立起来，不被这里拦。
         if ctx.input(|input| input.viewport().close_requested()) && !self.quitting {
@@ -206,9 +270,16 @@ impl eframe::App for Panel {
                 .map(|prefs| prefs.close_to_tray)
                 .unwrap_or(false);
             if close_to_tray {
+                self.wants_window = false;
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
             }
+        }
+        // 见 wants_window 的注释：eframe 会在第一帧后强行显示窗口，这里每帧盖回去。
+        #[cfg(windows)]
+        self.cloak();
+        if !self.wants_window {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         }
     }
 
@@ -270,4 +341,25 @@ impl eframe::App for Panel {
             supervisor.stop();
         }
     }
+}
+
+/// 给窗口设置 DWM 的 cloak 属性（隐身但不改变「窗口可见」状态）。
+/// 拿不到句柄或系统不认（老系统）就返回 false，调用方当没成功、每帧再试。
+#[cfg(windows)]
+pub(crate) fn set_cloaked(window: &winit::window::Window, cloaked: bool) -> bool {
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CLOAK};
+    let Ok(handle) = window.window_handle() else {
+        return false;
+    };
+    let RawWindowHandle::Win32(win32) = handle.as_raw() else {
+        return false;
+    };
+    let hwnd = win32.hwnd.get() as *mut core::ffi::c_void;
+    let value: u32 = if cloaked { 1 } else { 0 };
+    // 返回 HRESULT：0 是 S_OK，负数才是失败。
+    let result = unsafe {
+        DwmSetWindowAttribute(hwnd, DWMWA_CLOAK as u32, &value as *const u32 as *const _, 4)
+    };
+    result >= 0
 }

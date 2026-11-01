@@ -7,7 +7,7 @@
 DSH-X：DeepSeek Harness（`dsh`）的第三方启动器。`package.json` 的 `name` 是 `dsh-x`，包名和安装目录名都别改。它启动的是 dsh 官方原版 Web 界面，自己不重做 dsh 的页面。外壳已经**从 Electron 换成 Rust 原生外壳**（`shell-rs/`），发布身份（appId / 更新源 / 核心包名）集中在根目录 `fork.json`。
 
 ```
-原生外壳  shell-rs/（eframe/egui 面板 + 托盘 + 本机 HTTP 桥 + 更新器）  常驻托盘，托盘菜单起停核心
+原生外壳  shell-rs/（eframe/egui 面板 + 托盘 + 本机通道 + 更新器）  常驻托盘，启动直接开管理页，托盘菜单起停核心
 Node 核心 start.js → server.js        管理页后端 + 版本 / 插件 / 整合包 / 同步的全部业务；由外壳作为子进程拉起
 管理界面 public/index.html           单页手写 HTML + 原生 JS，无框架、无构建步骤，用系统浏览器打开
 启动进度页 public/booting.html       轮询 /api/state 显示阶段与安装进度，dsh 就绪后自己跳进去
@@ -26,7 +26,7 @@ Node 核心 start.js → server.js        管理页后端 + 版本 / 插件 / �
 | `npm test` | 全部用例（`node --test`，1000+ 用例，约 3 分钟） |
 | `node --test test/packs.test.mjs` | 单个用例文件 |
 | `npm run shell` | 编译并运行原生外壳（`cargo run --release --manifest-path shell-rs/Cargo.toml`） |
-| `cargo test --manifest-path shell-rs/Cargo.toml` | 外壳单测（版本门槛、token、核心路径推导） |
+| `cargo test --manifest-path shell-rs/Cargo.toml` | 外壳单测（版本门槛、帧编解码、管道名随机串、核心路径推导） |
 | `npm run dist` | 打安装包（`node scripts/pack-rs.mjs`，先 `cargo install cargo-packager --locked`） |
 | `node scripts/make-pack.mjs` | 把 `packs/<名字>/` 打成 `.dspack`（产物在 `release/packs/`） |
 
@@ -48,9 +48,9 @@ Node 核心 start.js → server.js        管理页后端 + 版本 / 插件 / �
 
 | 路径 | 是什么 |
 |---|---|
-| `start.js` | 入口：端口与日志；被外壳拉起时安装 `host-remote.js` 的本机桥、并看门狗式盯着 `DSH_SHELL_PID` |
+| `start.js` | 入口：端口与日志；被外壳拉起时安装 `host-remote.js` 的本机通道、通道 EOF 就退出，另有看门狗盯着 `DSH_SHELL_PID` 兜底 |
 | `server.js` | 管理页后端 + 全部业务（最大文件）：HTTP 路由、版本管理、插件安装、整合包、启动失败自愈 |
-| `host-remote.js` | 核心侧的外壳代理：把 `setHost()` 的能力转成 `POST http://127.0.0.1:<桥端口>/host/*` |
+| `host-remote.js` | 核心侧的外壳代理：把 `setHost()` 的能力转成一条本机套接字上的 JSON 帧（4 字节小端长度 + UTF-8）；`createIpcTransport` 管连接与帧，`createRemoteHost` 管缓存与降级 |
 | `fork.json` / `fork.js` | 发布身份（appId、productName、updateOwner/Repo、corePackage、dataDir、tagPrefix）；核心与打包脚本都只从这里读 |
 | `settings.js` | 设置读写；`safe*` 一族是校验函数（端口、路径、代理、语言……都从这过） |
 | `registry.js` / `version.js` | dsh 版本发现、pnpm 交互（进度解析）、版本号比较；装版本失败时把 npm 的收尾报错换成具体提示（`describeNpmFailure`：ETARGET 发版不齐 / 404 没有这个包） |
@@ -71,7 +71,7 @@ Node 核心 start.js → server.js        管理页后端 + 版本 / 插件 / �
 | `plugins/` `packs/` | 插件源码（发 npm）与随包发的整合包配方（见「关键机制」，**两个目录别合并**） |
 | `skills/` | 给 AI 用的技能源码（随仓库分发，不进安装包）：`dsh-x-selfcheck` 只读自检环境，`node skills/dsh-x-selfcheck/scripts/selfcheck.mjs`，零依赖 |
 | `compat/` `perf/` | 注入 dsh 进程的钩子：兼容修补与加速 |
-| `shell-rs/` | Rust 原生外壳：`main.rs` 单实例与启动、`supervisor.rs` 起停核心、`panel.rs` egui 面板、`tray.rs` 托盘、`bridge.rs` 本机 HTTP 桥、`prefs.rs` 设置、`updater.rs` 更新器（目前只返回 `disabled`）；`Cargo.toml` 是外壳版本与 `env!` 注入的 appId/productName |
+| `shell-rs/` | Rust 原生外壳：`main.rs` 单实例与启动、`supervisor.rs` 起停核心、`panel.rs` egui 面板、`tray.rs` 托盘、`bridge.rs` 本机通道（命名管道 / UDS）、`prefs.rs` 设置、`updater.rs` 更新器（目前只返回 `disabled`）；`Cargo.toml` 是外壳版本与 `env!` 注入的 appId/productName |
 | `test/` | 用例与假服务器 |
 | `docs/` | GitHub Pages 落地页 + 看板娘设计稿 + `releases/`（入库的发版说明）+ `strip-electron-plan.md`（本次改造的方案与进度） |
 | `assets/` | 图标 master（`icon.png` → `make-icons.py` 出全套） |
@@ -83,11 +83,12 @@ Node 核心 start.js → server.js        管理页后端 + 版本 / 插件 / �
 
 ### 外壳与核心的契约
 
-- 外壳 `spawn` 核心：`DSH_RUNTIME_NODE`（系统 Node）、`DSH_SHELL_URL`（桥地址）、`DSH_SHELL_TOKEN`、`DSH_SHELL_PID`、`DSH_SHELL_VERSION`、`DSH_CORE=1`；核心在 `start.js` 里用 `remoteHostFromEnv()` 装上 `host-remote.js`，之后 `setHost(REMOTE_HOST)`——`server.js` 一行都不用为外壳改。
-- 核心调外壳一律 `POST <DSH_SHELL_URL>/host/<动作>` 带 `Authorization: Bearer <token>`：`open` / `wake` / `notify` / `exit` / `relaunch` / `info` / `desktop/*` / `browser/*` / `shellUpdate/*`。实现见 `shell-rs/src/bridge.rs`，映射表见 `docs/strip-electron-plan.md` §6。
-- 外壳把更新进度推回核心：`POST /api/internal/shell-update`（校验同一个 token），核心转 SSE 给管理页。
-- 核心**不许** import 外壳、外壳**不许** import 核心；两边只认上面的 HTTP 契约。
-- 核心看门狗：`start.js` 每 3 秒检查 `DSH_SHELL_PID`，外壳没了就关服务退出（否则外壳被强杀后核心会成孤儿，占着管理页端口和文件）。
+- 外壳 `spawn` 核心：`DSH_RUNTIME_NODE`（系统 Node）、`DSH_SHELL_IPC`（本机通道名）、`DSH_SHELL_PID`、`DSH_SHELL_EXE`、`DSH_SHELL_VERSION`、`DSH_SHELL_PREFS=1`、`DSH_CORE=1`；核心在 `start.js` 里用 `remoteHostFromEnv()` 装上 `host-remote.js`，之后 `setHost(REMOTE_HOST)`——`server.js` 一行都不用为外壳改。
+- 通道是**一条本机套接字**（Windows 命名管道 `\\.\pipe\dsh-x-<外壳 pid>-<8 位随机>`，unix `<APP_DIR>/ipc/shell-<pid>.sock`，目录 0700 / 文件 0600），外壳当服务端、核心当客户端。帧 = 4 字节小端长度（上限 1 MiB）+ UTF-8 JSON：请求 `{id,method,params}`，响应 `{id,ok,result|error}`，事件 `{event,data}`（连接建立时外壳先推一次 `shellUpdate`）。
+- 核心调外壳的动作名：`open` / `wake` / `notify` / `exit` / `relaunch` / `info` / `desktop/*` / `browser/*` / `shellUpdate/*`。实现见 `shell-rs/src/bridge.rs` 的 `route()`，映射表见 `docs/strip-electron-plan.md` §6。
+- 鉴权不靠 token：连上后比对**对端 pid**（`GetNamedPipeClientProcessId` / `SO_PEERCRED`，mac 的 xucred 没有 pid 时退回文件权限）。排障用 `node scripts/ipc-call.mjs info`（读 `DSH_SHELL_IPC`），没有 curl 可用了；它是个独立进程，外壳得用 `DSH_SHELL_IPC_ALLOW_ANY=1` 起才放行（默认严格）。
+- 核心**不许** import 外壳、外壳**不许** import 核心；两边只认上面的帧契约。
+- 生命周期：通道 EOF 就是外壳死亡信号，`start.js` 立刻关服务退出；`watchShell()` 每 3 秒看一次 `DSH_SHELL_PID` 兜底（通道被安全软件掐断、或外壳卡死不肯关套接字时只有这条还认得出来）。
 
 ### 版本、实例与数据
 
@@ -132,6 +133,15 @@ dsh 的环境隔离单位。模板名（web / headless / acp / sdk / …）会�
 - `DSH_SHELL_PREFS=1` 由外壳写入，`/api/settings` 的 `shellPrefs` 据此告诉页面外壳认不认这组键。
 - 任务通知：`server.js` 在实例启动失败 / 意外退出时调 `host.notify`；文案、系统通知都在外壳里；**正常启动不发通知**。这个开关只管外壳自己的提醒，插件通知走 `/api/desktop/notify`，由插件自己的开关决定。
 
+### 启动行为：默认没有任何窗口
+
+- 用户双击后**不弹面板、不弹黑框**：装出来的 exe 是 GUI 程序（`main.rs:3` 的 `cfg_attr(not(debug_assertions), windows_subsystem = "windows")`，调试构建保留控制台），核心子进程带 `CREATE_NO_WINDOW`（`supervisor.rs` 的 `creation_flags(0x0800_0000)`）。
+- 核心把管理页地址打出来后，`panel.rs` 的 `auto_open` 用系统默认浏览器打开；面板只在这两种情况出现：托盘点「打开面板」（`tray.rs` 的 `Action::Show`），或核心反复起不来（`Phase::Failed`，只亮一次，日志是唯一线索）。
+- **别把面板改成启动即可见**：这条是用户明确要过的（`m02400`）。改动集中在 `panel.rs` 的 `wants_window` / `cloak`，`main.rs` 的 creator 里建窗后立刻隐身。
+- 坑（踩过，别再踩）：eframe 第一帧画完会**无条件** `window.set_visible(true)`（`eframe-0.37.0/src/native/epi_integration.rs:441-453`，本意是防白闪），`NativeOptions` 里传 `.with_visible(false)` 压不住它；只发 `ViewportCommand::Visible(false)` 也压不住中间那一帧（实测可见约 44ms）。所以 Windows 上改用 DWM 的 `DWMWA_CLOAK` 属性（`panel.rs` 的 `set_cloaked` / `cloak`，依赖 `windows-sys` 的 `Win32_Graphics_Dwm`），`Visible(false)` 留作兜底。
+- 单实例：第二次双击不再弹面板，`supervisor.rs` 的 `remember_url` / `open_running_manager` 读 `<APP_DIR>/shell-url.txt` 里上次的管理页地址，探活后直接开浏览器。
+- **外壳起的任何子进程都要过 `supervisor::no_window`**（`CREATE_NO_WINDOW`）。GUI 父进程 spawn 控制台程序时 Windows 会给子进程新开一个控制台窗口，屏幕上就是一闪而过的 CMD / 终端窗口：踩过两次——核心 `node.exe` 少了它会留一个黑框常驻，`node --version` 探测少了它会启动时闪两下（找 node 探一次、面板要版本再探一次，`node_version` 现在还有按路径缓存）。
+- 验证：起 exe 后用 `EnumWindows` 看 `标题=DSH-X` 的窗口应是 `wsVisible=False`、`DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED=14)` 为 `1`；`/api/state` 应为 200；核心故意弄坏（给个只有 `start.js` 且 `process.exit(1)` 的目录）时面板应自己亮出来（`cloaked=0`）。
 ### 内置浏览器控制（设置页「浏览器控制」）
 
 - 两个键（`browserControl` / `browserIgnoreCertificate`）同样是「核心写 `settings.json`、外壳直接读」。
@@ -163,9 +173,15 @@ dsh 的环境隔离单位。模板名（web / headless / acp / sdk / …）会�
 
 - 安装包由 `cargo-packager` 生成（`shell-rs/Packager.toml`，`npm run dist` 调 `scripts/pack-rs.mjs`）：Windows NSIS（每用户）、macOS dmg（`signing_identity = "-"`，ad-hoc 签名）、Linux AppImage + deb。产物在 `release/packager/`。
 - `pack-rs.mjs` 先组装 `release/rs-stage/core`（`copyAppFiles` + npm/pnpm JS + 写 `node/` 包装：一律转调 `DSH_RUNTIME_NODE`），再 `cargo build --release`，最后 `cargo packager`。它还会校验 `Packager.toml` 的 version 等于 `Cargo.toml`、identifier 等于 `fork.json.appId`。
+- 默认装到 `%LOCALAPPDATA%\Programs\DSH-X`。cargo-packager 的 NSIS 把 currentUser 目录写死成 `%LOCALAPPDATA%\<产物名>` 且没有配置项，所以 `shell-rs/nsis/installer.nsi` 是抄自 cargo-packager 0.11.8 的改版模板（`[nsis] template` 指向它），相对上游只改三处：默认目录加 `Programs`、沿用「上次安装目录」前先确认 `uninstall.exe` 还在（否则装回一个已删掉的旧路径）、卸载递归删目录（上游非递归 + 按字母序，删不掉 `core`）。升级 cargo-packager 要重新比对上游模板，`test/pack-nsis.test.mjs` 盯着这三处。
 - 发布身份全从 `fork.json` 读：appId、productName、updateOwner/Repo、corePackage。**别在别处硬编码**（`test/fork-identity.test.mjs` 会查）。Windows 卸载项键名是 `DSH-X`（DisplayName），不是 appId；旧 Electron 版的卸载项是 GUID 且装在 `%LOCALAPPDATA%\Programs\DSH`。cargo-packager 没有安装钩子，所以**目前只能让用户先手动卸载旧 Electron 版**（README 里写了）；要自动处理得在 `pack-rs.mjs` 里另加一步，别在文档里当成已有。
 - 外壳自更新：`updater.rs` 目前只返回 `status: "disabled"`（未接 cargo-packager-updater）；mac / Linux 也不提供。核心更新照旧走 npm，不受影响。
 - `.github/workflows/build.yml` 三平台并行出包（Windows / Ubuntu / macOS arm64 + x64），Linux job 顺带发跨平台核心 npm 包（`pack-core.mjs --publish`），mac 缺 `assets/icon.icns` 时整段跳过。
+- 安装界面是中文：`shell-rs/Packager.toml` 的 `[nsis] languages = ["SimpChinese"]` 把 MUI 中文语言包插进来（只有一个语言，所以不弹选择框）；要加英文就把 `English` 一并列上。
+- 图标只有一份 master（`assets/icon.png`）：`python scripts/make-icons.py` 出 `assets/{icon,dsh,tray}.ico`、`tray.png`、`icon.icns` 与 `public/`、`docs/` 两份 favicon。
+  - exe / 快捷方式：「Windows 只认资源段」，所以 `shell-rs/build.rs` 用 `embed-resource` 编 `icon.rc` 把 `assets/icon.ico` 嵌进二进制（cargo-packager 不会做这件事；编不进去就 panic，别让它静默退回通用空白图标）。
+  - 安装包 / 卸载程序：`[nsis] installer_icon` + 模板里的 `MUI_ICON` / `MUI_UNICON`。
+  - 托盘与窗口图标：`shell-rs` 里从 `tray.png` 解码缩小（`image` crate 三个平台都要，别塞进 `cfg(windows)` 依赖），窗口用 `ViewportBuilder` 的 `with_icon`。
 
 ### 网络与子进程环境
 
@@ -181,6 +197,7 @@ dsh 的环境隔离单位。模板名（web / headless / acp / sdk / …）会�
 - **Windows 的 junction**：pnpm 用 junction 指向 `.pnpm`，目标被删就悬空，读目录会报 `UNKNOWN ... -4094`；清理时要扫进 `@scope` 一层。
 - 管理页端口每次启动可能变（被占用会顺延）：旧链接 401、旧标签页里"插件包加载失败"都是正常现象。
 - cookie 堆到 16 KB 会让全站 `HTTP 431`：给 cookie 加内容前先算总量。
-- 测试输出别接管道（会说第二遍，因为真有人踩）。另外在 DSH 启动器里跑测试时，宿主会注入自己的 `NODE_OPTIONS`，涉及 `--require` 的断言要先排除继承项（`test/bundled-runtime.test.mjs` 有现成写法）。
+- 测试输出别接管道（会说第二遍，因为真有人踩）。另外在 DSH 启动器里跑测试时，宿主会注入自己的 `NODE_OPTIONS`，涉及 `--require` 的断言要先排除继承项（`test/bundled-runtime.test.mjs` 有现成写法），也会注入 `DSH_PROFILE`（宿主自己的 profile，比如 desktop），它会盖掉用例默认的 web——`isolateUserHome()` 统一清掉了，自己拼 `env` 的用例也要显式 `DSH_PROFILE: ''`。
+- **`public/*.js` 是页面另外请求的脚本**：浏览器扩展 / 安全软件会拦掉（控制台 `net::ERR_BLOCKED_BY_CLIENT`），主脚本随后就抛错、整页初始化停住——按钮全失灵，看着像「安装坏了」（用户真机上报过）。所以引用它们的全局变量必须带兜底（`public/index.html` 的 `const createLogView = window.createLogView || …`），新增外部脚本同理；`test/log-view.test.mjs` 有一条用例盯着这行。
 - 改 `shell-rs/` 后先 `cargo build --manifest-path shell-rs/Cargo.toml`，再真机起一次面板（面板能起来、管理页能开、托盘能唤回）才算过。PowerShell 的 `Set-Content` 默认写 UTF-16，会把 `.rs` 改成乱码；改文件用 `tools.edit` / `tools.write`。
 - `data/`、`release/`、`vendor/` 里的东西可以随便清（都是产物），但 `release/release-key.pem`、`release/packager-key.pem` 除外。

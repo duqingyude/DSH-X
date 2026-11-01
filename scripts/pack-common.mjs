@@ -41,7 +41,7 @@ const APP_FILES = [
   'platform.js',
   // 发布身份（appId / 更新源 / 核心包名）：server.js / core-npm.js / platform.js 都 import 它。
   'fork.js', 'fork.json',
-  // 外壳把 host 换成 HTTP 桥之后，start.js 会 import 它；漏了核心一启动就 ERR_MODULE_NOT_FOUND（打过一次包才发现）。
+  // 外壳把 host 换成跨进程通道之后，start.js 会 import 它；漏了核心一启动就 ERR_MODULE_NOT_FOUND（打过一次包才发现）。
   'host-remote.js',
   'filemanager.js',
   'filemanager-base.js',

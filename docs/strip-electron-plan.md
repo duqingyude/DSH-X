@@ -44,9 +44,9 @@ Electron 外壳在本仓库承担了窗口、标签页、托盘、单实例、�
 ┌──────────────── DSH.exe（Rust 原生，约 7MB）─────────────────┐
 │ 托盘（tray-icon + muda）        原生面板（eframe/egui）        │
 │ 单实例  系统通知  更新器（cargo-packager-updater）             │
-│ 本机 HTTP 桥 127.0.0.1:<随机端口>  Authorization: Bearer <token>│
+│ 本机通道 \\.\pipe\dsh-x-<pid>-<随机> / shell-<pid>.sock   │
 └───────────┬───────────────────────────────▲──────────────────┘
-            │ spawn（系统 node）             │ host 调用（HTTP）
+            │ spawn（系统 node）             │ host 调用（长度前缀 JSON 帧）
             ▼                               │
 ┌──── node start.js → server.js（核心，零第三方依赖）───────────┐
 │ 管理页/API · 版本 · 插件 · 整合包 · 同步 · host-remote.js      │
@@ -97,8 +97,8 @@ dsh 官方本来就以 node CLI 形式发布，预期没问题，但这是全案
 
 ## 6. 外壳 ↔ 核心契约
 
-原则：**`server.js` 一行不改**。`start.js` 在存在 `DSH_SHELL_URL` 时装一个 `host-remote.js`
-（约 60 行），把原来的 `setHost({...})` 换成 HTTP 调用。
+原则：**`server.js` 一行不改**。`start.js` 在存在 `DSH_SHELL_IPC` 时装一个 `host-remote.js`，
+把原来的 `setHost({...})` 换成一条本机套接字上的 JSON 帧调用（见本节末的「传输」）。
 
 | host 成员 | 现在（Electron） | 改造后 |
 |---|---|---|
@@ -111,16 +111,23 @@ dsh 官方本来就以 node CLI 形式发布，预期没问题，但这是全案
 | `shellUpdate.*` | electron-updater | cargo-packager-updater |
 | `exit` / `relaunch` | `app.quit` / `app.relaunch` | 停核心后退出 / 重拉自身 |
 
-**反向（外壳 → 核心）**：`GET /api/tray`（1.5s 轮询）、`POST /api/tray/action`、`POST /api/wake`、
-新增 `POST /api/internal/shell-update`（外壳把更新进度推给核心，核心转 SSE 给管理页）。
+**反向（外壳 → 核心）**：`GET /api/tray`（1.5s 轮询）、`POST /api/tray/action`、`POST /api/wake`；
+外壳的更新进度走同一条通道的**事件帧**（`{event:'shellUpdate',data}`，连接建立时先推一次），
+核心转 SSE 给管理页——不再有 `POST /api/internal/shell-update` 这条 HTTP 路由。
 
 **托盘菜单**：展示逻辑（文案、可用性、请求体）从 `shell/model.mjs` 搬回核心 `trayStateText()`
 （`server.js:1571`），Rust 只按返回的 `label` / `actions` 渲染菜单，点击把 `body` 原样 POST 回
 `/api/tray/action`。Rust 侧零业务判断，菜单规则继续由 Node 用例覆盖。
 
-**环境变量**（外壳 → 核心）：`DSH_RUNTIME_NODE`、`DSH_CORE=1`、`DSH_APP_WINDOW=1`、
-`DSH_SHELL_PREFS=1`、`DSH_SHELL_URL`、`DSH_SHELL_TOKEN`、`DSH_SHELL_EXE`、`DSH_SHELL_PID`。
-`DSH_INTERNAL_TABS` 不再设置 → 页面自动降级并给出文案（`server.js:1939` 已有）。
+**环境变量**（外壳 → 核心）：`DSH_RUNTIME_NODE`、`DSH_CORE=1`、`DSH_SHELL_PREFS=1`、
+`DSH_SHELL_IPC`、`DSH_SHELL_EXE`、`DSH_SHELL_PID`、`DSH_SHELL_VERSION`。
+`DSH_APP_WINDOW` / `DSH_INTERNAL_TABS` 都不再设置（原生外壳没有内嵌窗口，页面按 `openModeWindow` 降级）。
+
+**传输（已落地）**：一条本机套接字（Windows 命名管道 `\\.\pipe\dsh-x-<外壳 pid>-<8 位随机>`，
+unix `<APP_DIR>/ipc/shell-<pid>.sock`，目录 0700 / 文件 0600），外壳当服务端、核心当客户端；
+帧 = 4 字节小端长度（上限 1 MiB）+ UTF-8 JSON：请求 `{id,method,params}`、响应 `{id,ok,result|error}`、
+事件 `{event,data}`。鉴权靠对端 pid（`GetNamedPipeClientProcessId` / `SO_PEERCRED`），不再有 token；
+通道 EOF 就是外壳死亡信号。九方案对比与取舍见 `docs/shell-ipc-plan.md`，排障用 `node scripts/ipc-call.mjs`。
 
 ## 7. 改动清单
 
@@ -128,10 +135,10 @@ dsh 官方本来就以 node CLI 形式发布，预期没问题，但这是全案
 
 | 文件 | 动作 | 要点 |
 |---|---|---|
-| `host-remote.js` | 新增 | 实现上表 host；`start.js` 按 env 注入 |
-| `start.js` | 改 | `DSH_SHELL_URL` 时 `setHost(remoteHost())`；`__DSH_SHOW__` 通道退役 |
+| `host-remote.js` | 新增 | 实现上表 host；`createIpcTransport` 走本机套接字，`start.js` 按 `DSH_SHELL_IPC` 注入 |
+| `start.js` | 改 | `DSH_SHELL_IPC` 时 `setHost(remoteHost())`；通道 EOF 退出 + `DSH_SHELL_PID` 看门狗兜底；`__DSH_SHOW__` 通道退役 |
 | `platform.js` | 改 | 删 `IN_ELECTRON`；`PACKAGED = DSH_CORE === '1'`；`RUNTIME_NODE` 用 `DSH_RUNTIME_NODE`/PATH 的 node；`runtimeNodeEnv()` 返回 `{}` |
-| `server.js` | 改 | `:1002` `shellPid = DSH_SHELL_PID \|\| process.ppid`；`:1571` 托盘菜单带 `label/actions`；`:3309-3370` 删 GitHub 安装包自更新；新增 `POST /api/internal/shell-update`；启动时若 `process.versions.electron` 直接报错「请安装新版 DSH-X」 |
+| `server.js` | 改 | `:1002` `shellPid = DSH_SHELL_PID \|\| process.ppid`；`:1571` 托盘菜单带 `label/actions`；`:3309-3370` 删 GitHub 安装包自更新；启动时若 `process.versions.electron` 直接报错「请安装新版 DSH-X」 |
 | `registry.js` | 改 | 删 `DSH_ELECTRON_BIN`（`:289`）；npm 用系统 node 自带的，`ensureNpm`（`:210`）留作兜底 |
 | `filemanager-windows.js` / `-mac.js` / `-linux.js` | 改 | `launcherExecutable()` 改读 `DSH_SHELL_EXE`，删 `IN_ELECTRON` 分支；自启逻辑本身不动 |
 | `apply-update.mjs` | 改 | 等核心与外壳双双退出；重启拉外壳 exe；`update-ok` 标记由外壳写 |
@@ -157,9 +164,9 @@ dsh 官方本来就以 node CLI 形式发布，预期没问题，但这是全案
 | `supervisor.rs` | 起/停/重启核心，解析管理页端口，崩溃重启，日志转存 |
 | `panel.rs` | egui 面板：实例列表与操作、版本与安装进度、更新、设置、Node 缺失引导 |
 | `tray.rs` | 托盘图标与动态菜单；托盘不可用时降级为「关面板即退出」 |
-| `bridge.rs` | 本机 HTTP 桥（token 校验），路由见 §6 |
+| `bridge.rs` | 本机通道（命名管道 / UDS + 对端 pid 校验），路由见 §6 |
 | `updater.rs` | cargo-packager-updater：检查/下载/安装，进度推给核心（当前是返回 `disabled` 的占位） |
-| `prefs.rs` | 读 `settings.json` 的六个系统开关 + `browserControl`；默认值另存 `shell/prefs.defaults.json` 供 Node 用例比对 |
+| `prefs.rs` | 读 `settings.json` 的六个系统开关 + `browserControl`；默认值以本文件的 `Default` 为源，`test/prefs-parity.test.mjs` 与 `settings.js` 逐项比对 |
 | `notify.rs` | 系统通知（三平台各一套后端，统一接口） |
 
 **删除**：`shell/*.mjs`（main、tabs、model、pages、desktop、browser-guests、updater、prefs、env）、
@@ -216,19 +223,34 @@ dsh 官方本来就以 node CLI 形式发布，预期没问题，但这是全案
   `DSH_SHELL_EXE`；旧版自启项指向同一路径，重装后自动指向新 exe。
 - **托盘**：Windows 通知区、macOS 菜单栏、Linux 需 `libayatana-appindicator3`（AppImage 打包进去，
   deb 写依赖）。没有托盘环境的机器降级为「无托盘，关面板即退出」。
+- **启动体验：默认没有任何窗口**（已实现）：装出来的 exe 是 GUI 程序（`windows_subsystem = "windows"`），
+  核心子进程带 `CREATE_NO_WINDOW`，所以双击既没有黑框也没有面板；核心把管理页地址打出来后由
+  `panel.rs` 的 `auto_open` 交给系统默认浏览器。面板只在两处出现：托盘点「打开面板」，或核心反复起不来
+  （`Phase::Failed`，只亮一次）。第二次双击走单实例，读 `<APP_DIR>/shell-url.txt` 探活后直接开浏览器。
+  **Windows 的隐身不能只靠 `ViewportCommand::Visible(false)`**：eframe 画完第一帧会无条件
+  `window.set_visible(true)`（`epi_integration.rs:441-453`），中间会闪约 44ms；实际做法是用 DWM 的
+  `DWMWA_CLOAK` 在窗口级别隐身（`panel.rs` 的 `set_cloaked` / `cloak`，`winit` + `windows-sys` 的 Dwm 特性），
+  `Visible(false)` 只作兜底。
+  黑框同理：GUI 外壳 spawn 任何控制台程序都会新开一个窗口，所有子进程（核心、`node --version` 探测、pnpm）
+  都必须走 `supervisor.rs` 的 `no_window()`（`CREATE_NO_WINDOW`）；`node_version` 还按路径缓存，否则一次启动会探两遍、闪两下。
 - **外壳更新**：cargo-packager-updater 读 GitHub releases 的 JSON（`version`/`url`/`signature`/`platforms`）；
   Windows 装 NSIS、Linux 替换 AppImage；macOS 暂时不支持（ad-hoc 签名，与现状一致）。
 - **核心更新**：完全不动（npm 通道 `/api/self/*` → `apply-update.mjs` → 失败回滚），只换 node 与重启通道。
-- **旧版替换（自动钩子未做）**：新安装包装到 `%LOCALAPPDATA%\Programs\DSH-X`。原计划让安装钩子先认出上游的
+- **安装目录**：默认 `%LOCALAPPDATA%\Programs\DSH-X`。cargo-packager 把 currentUser 的默认目录写死成
+  `%LOCALAPPDATA%\<产物名>`、也没有配置项，所以 `shell-rs/nsis/installer.nsi` 是从 cargo-packager 0.11.8 抄下来的
+  改版模板（`[nsis] template` 指向它），相对上游只改三处：默认目录加 `Programs`、沿用「上次安装目录」前先确认
+  `uninstall.exe` 还在（否则装回一个已被删掉的旧路径）、卸载时递归删目录。升级 cargo-packager 要重新比对上游模板，
+  `test/pack-nsis.test.mjs` 盯着这三处。
+- **旧版替换（自动钩子未做）**：原计划让安装钩子先认出上游的
   Electron 安装——**不能按卸载项键名认**：实测上游装的是 `%LOCALAPPDATA%\Programs\DSH`（不是 DSH-X），
   卸载项键名是 electron-builder 生成的随机 GUID（本机是 `6fddfcf6-d8ca-51f1-9134-650d98fb23d6`），
   只有 `DisplayName = DSH-X` 和 `InstallLocation` 前缀能拿来认。**但 cargo-packager 的 NSIS 没有安装钩子**，
   所以现在只在 README / 发版说明里写「先卸载旧 Electron 版」，不做自动卸载；将来要自动化，得在 `pack-rs.mjs`
   里另加一步（先跑 `uninstall.exe /S` 再装）或在 NSIS 模板里插 include，别在文档里当成已有。
   数据目录 `%APPDATA%\DSH` 与 `DSH_HOME` 不动，profile、会话、插件全部保留。
-- **卸载时会留下空目录**：核心是外壳的子进程，强杀外壳会让核心成孤儿并继续占着文件与管理页端口，
-  卸载程序因此删不干净（留下 `core` 目录）。P3 补「核心发现父进程没了就自己退出」（见 §13），
-  卸载脚本也等核心退出后再删。
+- **卸载残留（已修）**：核心是外壳的子进程，强杀外壳会让核心成孤儿并继续占着文件与管理页端口。两处收口：
+  核心自己看门狗（`start.js` 每 3 秒查 `DSH_SHELL_PID`，见 §13）、模板的卸载段改成 `RMDir /REBOOTOK /r`
+  （上游按字母序父目录在前、又是非递归，删不掉 `core`）。实测 `/S` 卸载后安装目录、快捷方式、卸载项全部清空。
 - **不提供并存**：身份隔离后两个产品技术上能同时启动，但共用 `%APPDATA%\DSH` 的 `settings.json`、日志与
   `versions/`，会互相覆盖配置、抢端口。安装器与文档一律写「先卸载上游」，详见 §11.8。
 - **npm 版退场**：删除 `npm-package/`；对已发布版本执行 `npm deprecate @yyh001/dsh-x`，提示去下载安装包；
@@ -265,18 +287,24 @@ dsh 官方本来就以 node CLI 形式发布，预期没问题，但这是全案
 
 | 项 | 状态 |
 |---|---|
-| PR-1 核心 host 抽象 | 完成：`host-remote.js` + `start.js` 接线 + `/api/internal/shell-update` + `platform.js` 收口（2026-10-31 注：后续已删 `IN_ELECTRON`/`NPM_MODE`/`RUNTIME_NODE_ENV`） |
+| PR-1 核心 host 抽象 | 完成：`host-remote.js` + `start.js` 接线 + `platform.js` 收口（后续已删 `IN_ELECTRON`/`NPM_MODE`/`RUNTIME_NODE_ENV`；当时那条 `POST /api/internal/shell-update` 已被外壳通道的事件帧取代） |
 | PR-2 Rust 外壳 | 完成：`shell-rs/`（面板、托盘、桥、supervisor、prefs、单实例、notify）+ `scripts/pack-rs.mjs` + `Packager.toml`，Windows NSIS 静默装、起核心、桌面/开始菜单快捷方式、卸载项都真机验证过 |
 | PR-3 切默认入口 + 清理 | 完成：Electron 外壳、npm 版、旧打包脚本与对应用例全部删除；`package.json`/`platform.js`/README/AGENTS/CONTRIBUTING/SECURITY/desktop-api 已改写；`npm test` 1003 用例全绿（996 pass / 7 skip） |
 | 打开方式 | 「独立桌面窗口」只剩遗留设置值：原生外壳没有内嵌窗口，页面按 `openModeWindow:false` 不再列这一项，老设置会提示并落到系统浏览器（README 已改成两种方式） |
 | 安装包更新入口 | 不再拼 `releases/latest/download/DSH-Setup.exe`（cargo-packager 的包名带版本与架构，没有稳定直链），改为指向 releases 页；自动更新归外壳更新器（未接） |
 | 设置页系统开关 | `desktopShell` 改成「有内嵌窗口 **或** 桥在（`host.desktop`）」，原生外壳下六个开关可用；`/api/self` 的 `shell.current` 先由 `DSH_SHELL_VERSION` 兜底，桥刷新回来后覆盖 |
+| 外壳通道 | 完成：环回 HTTP + Bearer 换成一条本机套接字（命名管道 / UDS）+ 长度前缀 JSON 帧；鉴权靠对端 pid，`tiny_http` / `DSH_SHELL_URL` / `DSH_SHELL_TOKEN` / `/api/internal/shell-update` 全删；通道 EOF 即时退出，看门狗降级为兜底；排障加 `scripts/ipc-call.mjs`（细节见 `docs/shell-ipc-plan.md` §11） |
 | 页面清理 | Electron 时代的用户可见文案去掉「Electron」；窗口按钮/拖动、内部标签页、`?window=1` 排版与回主页图标整块删除（`launcher.css`、`theme.css`、`launcher-boot.css`、`index.html` 共约 180 行） |
+| 启动体验 | 双击后无控制台、无面板，直接系统默认浏览器打开管理页；第二次双击读 `shell-url.txt` 探活后开浏览器；面板只在托盘点开或核心起不来时亮（Windows 用 DWM `DWMWA_CLOAK` 隐身，单发 `Visible(false)` 会闪 44ms，见 §8） |
 | 发布身份 | 页面里的 GitHub 链接、`scripts/release-notes.mjs` 的 compare 链接、两个整合包 manifest 的 homepage 都改成 `duqingyude/DSH-X`；`scripts/release-sbom.mjs` 的 `REPO` 改读 `fork.js` |
 | SBOM | 去掉 Electron 条目（`node_modules/electron` 已不存在，跑 `npm run release:sbom` 不再报错）；npm / pnpm / 旧包的 node 与 corepack 照旧按整包声明 |
+| 安装目录 | 默认 `%LOCALAPPDATA%\Programs\DSH-X`：cargo-packager 把 currentUser 目录写死且无配置项，所以换了自建模板 `shell-rs/nsis/installer.nsi`（只改默认目录、沿用旧目录前先验证 `uninstall.exe`、卸载递归删）；实测 `/S` 装到新路径，旧路径被删时不会再装回去 |
+| 卸载残留 | 已修：模板卸载段 `RMDir /REBOOTOK /r`，配合核心看门狗；实测卸载后安装目录（含 `core/`）、桌面/开始菜单快捷方式、卸载项全部清空 |
 | 旧版自动卸载钩子 | **未做**：cargo-packager 的 NSIS 没有安装钩子，现在只在文档里要求先手动卸载旧 Electron 版（§8） |
 | 外壳自更新 | **未做**：`updater.rs` 只返回 `status: "disabled"`，核心更新走 npm 不受影响（§8） |
-| mac dmg | 待补 `assets/icon.icns`（`make-icons.py` 还不出 icns），CI 里 mac job 在没有 icns 时整段跳过 |
+| mac dmg | `assets/icon.icns` 已由 `make-icons.py` 产出（Pillow 直接写 icns，不依赖 iconutil）；CI 里 mac job 仍保留「没有 icns 就跳过」的保险 |
+| 图标统一 | 一处 master（`assets/icon.png`）出全套：exe / 卸载程序 / 安装包 / 快捷方式 / 托盘 / 面板窗口 / 网页 favicon 都换成同一张 mascot。**Windows 的 exe 图标必须自己编 `.rc`**——cargo-packager 不写资源段，之前装出来的 `dsh-x.exe` 与安装包一直是通用空白窗格；现在 `build.rs` 用 `embed-resource` 嵌 `assets/icon.ico`，编不进去直接 panic |
+| 安装包汉化 | `[nsis] languages = ["SimpChinese"]`（只有一个语言，不弹选择框）；渲染出的脚本里有 `MUI_LANGUAGE "SimpChinese"`、`SimpChinese.nsh` 与 `MUI_LANGDLL_DISPLAY`，安装器窗口标题已是「DSH-X 安装」；卸载程序图标由模板里的 `MUI_UNICON` 一起换掉（`NsisConfig` 没有 `uninstaller_icon` 字段） |
 | 看板娘 WebP | 未做（属 P4 的独立小项，与外壳无关） |
 | 三平台 CI | 未真跑过：只有 Windows 的 NSIS 全链路在本机验证 |
 

@@ -5299,8 +5299,8 @@ export async function restartInstalled() {
 
 export function setHost(next) {
   host = { ...host, ...next }
-  // 外壳自更新的进度/状态变化直接推给页面。原生外壳不在这个进程里，它通过
-  // POST /api/internal/shell-update 推过来，再由同样的订阅者转成 SSE。
+  // 外壳自更新的进度/状态变化直接推给页面。原生外壳不在这个进程里，它从本机通道
+  // 推事件帧过来（host-remote.js 的 ingest），再由同样的订阅者转成 SSE。
   if (typeof next.onShellUpdateState === 'function') {
     next.onShellUpdateState((state) => emit('shellUpdate', state))
   }
@@ -6006,24 +6006,7 @@ async function handleApi(req, res, url) {
     void host.shellUpdate?.install().catch((error) => pushLog(`外壳更新安装失败：${error?.message || error}`))
     return
   }
-  // 原生外壳把更新进度推过来。外壳和核心是两个进程，进度只能从外面进来，
-  // 由这里转成 SSE（管理页订阅的 shellUpdate 事件）。
-  // token 再对一次：这条路会改管理页显示的更新状态，不能只听 loopback 就算数。
-  if (req.method === 'POST' && url.pathname === '/api/internal/shell-update') {
-    const expected = process.env.DSH_SHELL_TOKEN || ''
-    if (!expected || String(req.headers.authorization || '') !== 'Bearer ' + expected) {
-      send(res, 403, { error: '外壳推送缺少 token' })
-      return
-    }
-    try {
-      const state = await readJson(req)
-      host.shellUpdate?.ingest?.(state)
-      send(res, 200, { ok: true })
-    } catch (error) {
-      send(res, 400, { error: error instanceof Error ? error.message : String(error) })
-    }
-    return
-  }
+
   if (req.method === 'GET' && url.pathname === '/api/pending') {
     send(res, 200, { update: await pendingUpdate() })
     return
