@@ -41,12 +41,20 @@ test('卸载时递归删目录，不留空的 core/', () => {
   assert.ok(nsi.includes('RMDir /REBOOTOK /r "$INSTDIR\\\\{{this}}"'), 'resources_dirs 要递归删')
 })
 
-test('安装界面是中文：Packager.toml 给 NSIS 插 SimpChinese 语言包', () => {
+test('安装界面中英双语，默认跟系统语言走、不弹选择框', () => {
   const toml = read('shell-rs/Packager.toml')
-  assert.match(toml, /^languages = \["SimpChinese"\]$/m, 'cargo-packager 默认只插 English，界面会是英文')
+  assert.match(toml, /^languages = \["SimpChinese", "English"\]$/m, '两种语言都要列，缺一种就只剩单语界面')
   const nsi = read(TEMPLATE)
   assert.ok(nsi.includes('{{#each languages}}'), '模板要把 languages 列表展开')
   assert.ok(nsi.includes('!insertmacro MUI_LANGUAGE'), '模板要真的插 MUI 语言包')
+  // cargo-packager 在 languages 多于一个时会传 display_language_selector，默认模板会弹选择框；
+  // 我们的模板不插它，改成在 .onInit / un.onInit 里按系统语言归一（DSHX_PICK_LANGUAGE）。
+  assert.ok(!nsi.includes('!insertmacro MUI_LANGDLL_DISPLAY'), '不能弹语言选择框：默认跟系统语言走')
+  assert.ok(nsi.includes('!macro DSHX_PICK_LANGUAGE'), '要有按系统语言归一语言的宏')
+  const picks = nsi.match(/!insertmacro DSHX_PICK_LANGUAGE/g) || []
+  assert.equal(picks.length, 2, '安装与卸载的 .onInit 都要走这个宏')
+  assert.ok(nsi.includes('StrCpy $LANGUAGE 2052'), '中文系统落到简体中文')
+  assert.ok(nsi.includes('StrCpy $LANGUAGE 1033'), '其余系统落到英文')
 })
 
 test('打包脚本会在模板缺失时报错，而不是默默装到默认目录', () => {

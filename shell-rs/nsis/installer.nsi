@@ -40,7 +40,6 @@ ${StrLoc}
 !define ARCH "{{arch}}"
 !define PLUGINSPATH "{{additional_plugins_path}}"
 !define ALLOWDOWNGRADES "{{allow_downgrades}}"
-!define DISPLAYLANGUAGESELECTOR "{{display_language_selector}}"
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCTNAME}"
 !define MANUPRODUCTKEY "Software\${MANUFACTURER}\${PRODUCTNAME}"
 !define UNINSTALLERSIGNCOMMAND "{{uninstaller_sign_cmd}}"
@@ -111,10 +110,8 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
   !define MUI_HEADERIMAGE_BITMAP  "${HEADERIMAGE}"
 !endif
 
-; Define registry key to store installer language
-!define MUI_LANGDLL_REGISTRY_ROOT "HKCU"
-!define MUI_LANGDLL_REGISTRY_KEY "${MANUPRODUCTKEY}"
-!define MUI_LANGDLL_REGISTRY_VALUENAME "Installer Language"
+; 不弹语言选择框，所以也没有「记住上次选的语言」那组 MUI_LANGDLL_REGISTRY_* 定义：
+; 装一次只问一次没必要，语言自己按系统走（见 DSHX_PICK_LANGUAGE）。
 
 ; Installer pages, must be ordered as they appear
 ; 1. Welcome Page
@@ -360,10 +357,24 @@ FunctionEnd
 {{#each languages}}
 !insertmacro MUI_LANGUAGE "{{this}}"
 {{/each}}
-!insertmacro MUI_RESERVEFILE_LANGDLL
 {{#each language_files}}
   !include "{{this}}"
 {{/each}}
+
+; 安装界面中英双语，默认跟系统语言走、不弹选择框。NSIS 启动时 $LANGUAGE 已经是系统 UI 语言，
+; 这里把它归一到我们带的两种：中文系统（简 2052 / 繁 1028 / 港 3076 / 新加坡 4100）一律用简体中文，
+; 其余一律英文——否则德语、法语系统会看到一整屏中文。
+; cargo-packager 在 languages 多于一个时会传 display_language_selector=true，模板故意不插
+; MUI_LANGDLL_DISPLAY：多问一次「选语言」只是多一次点击。卸载程序走同一个宏。
+!macro DSHX_PICK_LANGUAGE
+  ${If} $LANGUAGE == 1028
+  ${OrIf} $LANGUAGE == 3076
+  ${OrIf} $LANGUAGE == 4100
+    StrCpy $LANGUAGE 2052
+  ${ElseIf} $LANGUAGE != 2052
+    StrCpy $LANGUAGE 1033
+  ${EndIf}
+!macroend
 
 !macro SetContext
   !if "${INSTALLMODE}" == "currentUser"
@@ -389,9 +400,7 @@ Function .onInit
   IfErrors +2 0
     StrCpy $PassiveMode 1
 
-  !if "${DISPLAYLANGUAGESELECTOR}" == "true"
-    !insertmacro MUI_LANGDLL_DISPLAY
-  !endif
+  !insertmacro DSHX_PICK_LANGUAGE
 
   !insertmacro SetContext
 
@@ -581,7 +590,7 @@ Function un.onInit
     !insertmacro MULTIUSER_UNINIT
   !endif
 
-  !insertmacro MUI_UNGETLANGUAGE
+  !insertmacro DSHX_PICK_LANGUAGE
 FunctionEnd
 
 Section Uninstall

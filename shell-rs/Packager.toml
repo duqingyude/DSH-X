@@ -32,10 +32,12 @@ installer_mode = "currentUser"
 # 另外把 MUI_UNICON 也指向同一个图标（上游只设安装程序的 MUI_ICON）。
 # 路径相对 shell-rs/（pack-rs.mjs 以 shell-rs/ 为工作目录跑 cargo packager）。
 template = "nsis/installer.nsi"
-# 安装界面中文：cargo-packager 默认只插 English，写 SimpChinese 后欢迎页、目录页、完成页、
-# 卸载确认页（以及「程序正在运行」这类提示）全部走 MUI 自带的中文语言包。只有一个语言，
-# 所以不会弹语言选择框。要加英文就把 English 一并列进来。
-languages = ["SimpChinese"]
+# 安装界面中英双语，默认跟系统语言走（不弹选择框）：模板里的 DSHX_PICK_LANGUAGE 把中文系统
+# 归到 SimpChinese、其余归到 English。两种语言的文案都由 cargo-packager 自带的 languages/*.nsh
+# 提供（欢迎页、目录页、完成页、卸载确认页与「程序正在运行」这类提示）。
+# 注意：列出两个语言后 cargo-packager 会传 display_language_selector=true，是模板故意不插
+# MUI_LANGDLL_DISPLAY 把它压掉的——别在模板里把选择框加回来。
+languages = ["SimpChinese", "English"]
 # 安装包自己的图标（资源管理器里双击的那个 exe、安装向导左上角、卸载程序）。不写就用 NSIS 的默认图标；
 # 应用图标是嵌进 dsh-x.exe 的资源段（shell-rs/build.rs + icon.rc），cargo-packager 不管那一步。
 installer_icon = "../assets/icon.ico"
