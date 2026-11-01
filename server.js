@@ -4853,6 +4853,20 @@ function attachProcess(version, profile, child, diagnosticContext) {
   instances.set(key, proc)
   // 一个组合一个实例，日志里要能看出是哪一行是哪台在说话（多开时尤其）
   const tag = `[${version}/${profile}] `
+  // spawn 本身失败（EAGAIN / EMFILE / 权限）时 ChildProcess 只发 error、不发 exit：不接住
+  // 就只能干等 START_TIMEOUT_MS 然后报「启动超时」，把真正的原因埋掉（macOS CI 上偶发过）。
+  child.on('error', (error) => {
+    proc.spawnError = error?.message || String(error)
+    proc.exit = { code: null, signal: null }
+    pushLog(`${tag}起不来：${proc.spawnError}`)
+    ready()
+    if (proc.status !== 'stopping') notifyInstance('failed', proc, { code: null, signal: null })
+    if (instances.get(key)?.child === child) {
+      instances.delete(key)
+      lastHealth = null
+    }
+    void emitState()
+  })
   const scheduleDiagnosis = () => {
     if (proc.status === 'running' && !proc.diagnosticTimer) {
       // 按输出批次发布，普通日志不刷新诊断；实例退出时取消，不能污染下一次启动。
@@ -4960,7 +4974,7 @@ async function waitUntilReady(proc, version) {
       })])
     } finally { clearTimeout(timer) }
   }
-  if (!proc.url) throw new Error(`${label} 启动失败`)
+  if (!proc.url) throw new Error(proc.spawnError ? `${label} 启动失败：${proc.spawnError}` : `${label} 启动失败`)
   return { url: proc.url }
 }
 

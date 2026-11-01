@@ -18,7 +18,9 @@ isolateUserHome(folder)
 const { saveSettings, loadSettings, DEFAULTS } = await import('../settings.js')
 test.after(() => rmSync(folder, { recursive: true, force: true }))
 
-const PREFS_RS = readFileSync(fileURLToPath(new URL('../shell-rs/src/prefs.rs', import.meta.url)), 'utf8')
+// Windows 上 git 默认把工作区转成 CRLF，这里的正则与逐行匹配都按 \n 写，先统一成 LF 再解析
+// （不然本地过、CI 红：Windows runner 上这条曾经报「prefs.rs 里的 Default 实现没找到」）。
+const PREFS_RS = readFileSync(fileURLToPath(new URL('../shell-rs/src/prefs.rs', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
 
 /** 把 Rust 的 `impl Default for Prefs` 拆成 { camelCase 键: 默认值 }。 */
 function rustDefaults() {

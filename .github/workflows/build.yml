@@ -73,11 +73,13 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
-      # eframe/winit 编译要 X11/Wayland 头；rfd 走 xdg-desktop-portal，要 dbus 开发包。
+      # eframe/winit 编译要 X11/Wayland 头；rfd 在 Linux 上走 GTK3（glib/gdk 的 dev 包，缺了 glib-sys
+      # 的 build script 直接报 Package glib-2.0 not found）；tray-icon 走 libayatana-appindicator3。
       - name: 装系统库
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libwayland-dev libdbus-1-dev pkg-config
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libdbus-1-dev pkg-config \
+            libgtk-3-dev libglib2.0-dev libayatana-appindicator3-dev
 
       - name: 跑测试
         run: npm test -- --test-timeout=120000
