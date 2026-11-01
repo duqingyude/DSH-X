@@ -191,7 +191,8 @@ fn main() {
     );
 
     if let Some(supervisor) = &supervisor {
-        supervisor.stop();
+        // 外壳真退了：让监督线程收摊，别用 stop()（那个只是暂停，线程还在等启动）。
+        supervisor.shutdown();
     }
     if let Err(error) = result {
         eprintln!("面板起不来：{error}");

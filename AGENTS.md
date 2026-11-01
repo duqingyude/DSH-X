@@ -98,6 +98,7 @@ Node 核心 start.js → server.js        管理页后端 + 版本 / 插件 / �
 - 窗口藏着时 eframe 只跑 `logic()` 不跑 `ui()`，没人再 `request_repaint_after`，所以往主循环送事件一律走 `bridge.rs` 的 `emit()`（发完 `ui.request_repaint()`）。**别直接 `ctx.events.send`**，否则「托盘点打开面板」要等下一次偶然重绘。
 - 托盘菜单跟着模型重建：`tray.rs` 的 `Tray::sync()` 比一份 `signature`，变了才 `set_menu`；菜单项动作只登记进 `ROSTER`，由面板 `apply_tray()` 统一走 `link.action()`。
 - `DSH_SHELL_IPC_ALLOW_ANY=1` 放开的连接是 `Trust::Debug`：能下指令，但**不许顶替核心当反向通道**（否则 `scripts/ipc-call.mjs` 一接上，面板点按钮就把请求发给它，面板显示「核心还没连上外壳通道」）。
+- **`Supervisor::stop()` 是「暂停」不是「拆线程」**（`shell-rs/src/supervisor.rs`）：它会杀子进程、把 status 落到 `Stopped`（清 pid 与 url），但监督线程留在等待分支里等 `restart()`；退出外壳走 `shutdown()`。以前 `stop()` 顺手 `break` 了循环，害处有两个：status 停在 `Running` 让面板显示「运行中」却连不上通道，而且「启动核心」再也没人执行。面板 header 的「启动核心 / 停止核心」、托盘的同一项、以及托盘那几项预设动作都靠这条约定。
 
 ### 版本、实例与数据
 

@@ -144,14 +144,14 @@ impl Panel {
                 }
                 Event::Exit => {
                     if let Some(supervisor) = &self.supervisor {
-                        supervisor.stop();
+                        supervisor.shutdown();
                     }
                     self.quitting = true;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
                 Event::Relaunch => {
                     if let Some(supervisor) = &self.supervisor {
-                        supervisor.stop();
+                        supervisor.shutdown();
                     }
                     self.relaunch
                         .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -174,6 +174,20 @@ impl Panel {
                     }
                 }
                 Event::Notice { ok, message } => self.notice = Some((ok, message)),
+                Event::CoreDown => {
+                    // 模型还留着（里面的端口、状态都是上一份的），但按钮会按「没连上」
+                    // 灰掉，所以这里只需要说明发生了什么、下一步该点哪里。
+                    let lang = self.lang();
+                    self.notice = Some((
+                        false,
+                        tr(
+                            lang,
+                            "核心已经停止：点上面的「启动核心」重新拉起它。",
+                            "The core stopped. Use Start core above to bring it back.",
+                        )
+                        .to_string(),
+                    ));
+                }
             }
         }
     }
@@ -226,7 +240,7 @@ impl Panel {
                 }
                 Action::Quit => {
                     if let Some(supervisor) = &self.supervisor {
-                        supervisor.stop();
+                        supervisor.shutdown();
                     }
                     self.quitting = true;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -318,6 +332,11 @@ impl Panel {
             .lock()
             .map(|status| (status.phase, status.pid))
             .unwrap_or((Phase::Idle, 0));
+        // 进程活着不等于通道通着：核心还在连（或这个核心不认 panel 协议）时，
+        // 面板操作会失败。分开显示，别让「运行中」误导用户去点按钮。
+        if phase == Phase::Running && pid > 0 && !self.link.connected() {
+            return (p.warn, format!("运行中 · pid {pid}（通道未连上）"));
+        }
         match phase {
             Phase::Running => (p.ok, format!("运行中 · pid {pid}")),
             Phase::Starting => (p.warn, "启动中…".to_string()),
@@ -336,8 +355,17 @@ impl Panel {
             .map(|model| model.core.version.clone())
             .unwrap_or_default();
         let url = self.status.lock().map(|status| status.url.clone()).unwrap_or_default();
+        let phase = self
+            .status
+            .lock()
+            .map(|status| status.phase)
+            .unwrap_or(Phase::Idle);
+        let has_supervisor = self.supervisor.is_some();
         let mut settings_clicked = false;
         let mut open_clicked = false;
+        // Some(true) = 启动，Some(false) = 停止：核心停着时面板是唯一能看见的界面，
+        // 不能只靠托盘（Linux 没托盘时面板就是全部）。
+        let mut core_clicked: Option<bool> = None;
         egui::Panel::top("header").frame(theme::bar(p)).show(ui, |ui| {
             ui.horizontal(|ui| {
                 let (rect, _) =
@@ -374,6 +402,17 @@ impl Panel {
                     {
                         open_clicked = true;
                     }
+                    if has_supervisor {
+                        let running = matches!(phase, Phase::Running | Phase::Starting);
+                        let label = if running {
+                            tr(lang, "停止核心", "Stop core")
+                        } else {
+                            tr(lang, "启动核心", "Start core")
+                        };
+                        if ui.button(label).clicked() {
+                            core_clicked = Some(!running);
+                        }
+                    }
                 });
             });
         });
@@ -382,6 +421,13 @@ impl Panel {
         }
         if open_clicked && !url.is_empty() {
             let _ = open::that(url);
+        }
+        if let (Some(start), Some(supervisor)) = (core_clicked, self.supervisor.as_ref()) {
+            if start {
+                supervisor.restart();
+            } else {
+                supervisor.stop();
+            }
         }
     }
 
@@ -487,6 +533,9 @@ impl Panel {
         let running = row.is_running();
         let starting = row.status == "starting";
         let stopping = row.status == "stopping";
+        // 动作全都要过外壳通道。核心停了/还在连的时候把按钮灰掉，
+        // 比让用户点一下再收到「核心没有在运行」好。
+        let online = self.link.connected();
         theme::card(p).show(ui, |ui| {
             ui.horizontal(|ui| {
                 let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
@@ -507,7 +556,7 @@ impl Panel {
                     }
                     if running || starting {
                         if ui
-                            .add_enabled(!stopping, egui::Button::new("■"))
+                            .add_enabled(!stopping && online, egui::Button::new("■"))
                             .on_hover_text(tr(lang, "停止", "Stop"))
                             .clicked()
                         {
@@ -515,7 +564,7 @@ impl Panel {
                         }
                     } else if ui
                         .add_enabled(
-                            row.installed,
+                            row.installed && online,
                             egui::Button::new("▶"),
                         )
                         .on_hover_text(tr(lang, "启动", "Start"))
@@ -523,7 +572,7 @@ impl Panel {
                     {
                         clicked = Some("start");
                     }
-                    let restartable = running && !row.busy && row.installed;
+                    let restartable = running && !row.busy && row.installed && online;
                     if ui
                         .add_enabled(restartable, egui::Button::new("⟳"))
                         .on_hover_text(tr(lang, "重启", "Restart"))
@@ -898,7 +947,7 @@ impl eframe::App for Panel {
 
     fn on_exit(&mut self) {
         if let Some(supervisor) = &self.supervisor {
-            supervisor.stop();
+            supervisor.shutdown();
         }
     }
 }

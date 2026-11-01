@@ -39,6 +39,9 @@ pub enum Event {
     Panel(crate::model::PanelModel),
     /// 要显示给用户的一句话（面板拉模型失败之类）。ok 为假时按错误配色显示。
     Notice { ok: bool, message: String },
+    /// 核心那条连接断了（被停掉、崩了、或正在重启）。面板据此把「运行中」的旧模型
+    /// 标成不可操作，别让用户点下去才看到「核心还没连上外壳通道」。
+    CoreDown,
 }
 
 /// 外壳反向调核心时的等待上限。面板方法是「查一下状态」，慢过 3 秒就说明对面不是这套协议。
@@ -92,7 +95,9 @@ impl Link {
             Err(_) => None,
         };
         let Some(conn) = conn else {
-            return Err("核心还没连上外壳通道".to_string());
+            // 这句话会原样显示在面板的提示条里，所以要能照着做：不是「稍后再试」，
+            // 而是「核心没在跑」——去托盘或面板 header 点启动。
+            return Err("核心没有在运行（外壳通道已断开），先启动核心再试".to_string());
         };
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = mpsc::channel();
@@ -337,6 +342,8 @@ fn serve(stream: LocalSocketStream, ctx: Arc<BridgeCtx>) {
         ctx.link.detach(&conn);
         // 还在等回包的调用立刻失败：核心已经走了，等到超时只会让界面多卡几秒。
         ctx.link.fail_pending();
+        // 让面板知道核心没了：模型是上一份的，按钮得灰掉，状态不能停在「运行中」。
+        emit(&ctx, Event::CoreDown);
     }
 }
 
@@ -390,7 +397,7 @@ fn handle_event(ctx: &BridgeCtx, event: &str, data: Option<&Value>) {
 }
 
 /// 一条连接的可信级别。
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Trust {
     /// 就是自己拉起的那个核心：既能下指令，也能当反向调用通道。
     Core,

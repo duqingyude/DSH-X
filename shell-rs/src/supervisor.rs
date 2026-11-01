@@ -31,6 +31,9 @@ pub const MIN_NODE: (u32, u32, u32) = (22, 18, 0);
 const TAIL_LINES: usize = 200;
 /// 一分钟内连续失败这么多次就不再自动重启，免得把机器拖死。
 const MAX_RESTARTS: u32 = 3;
+/// 停着等「启动核心」时的轮询间隔：监督线程不能退出（退出就没人再 spawn 了），
+/// 用一个小睡循环等标记变化，比引入 Condvar 少一层状态。
+const WAIT_TICK: Duration = Duration::from_millis(150);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Phase {
@@ -85,7 +88,11 @@ pub struct Supervisor {
     node: PathBuf,
     core_dir: PathBuf,
     shell: ShellEnv,
+    /// 用户要核心停着（托盘 / 面板的「停止核心」）。这是暂停，不是退出：
+    /// 监督线程留着等「启动核心」，否则点过停止之后再也起不来。
     stop: Arc<AtomicBool>,
+    /// 外壳要退出了：监督线程收摊。
+    quit: Arc<AtomicBool>,
     restart: Arc<AtomicBool>,
     child: Arc<Mutex<Option<std::process::Child>>>,
 }
@@ -104,6 +111,7 @@ impl Supervisor {
             core_dir,
             shell,
             stop: Arc::new(AtomicBool::new(false)),
+            quit: Arc::new(AtomicBool::new(false)),
             restart: Arc::new(AtomicBool::new(false)),
             child: Arc::new(Mutex::new(None)),
         })
@@ -115,13 +123,24 @@ impl Supervisor {
         thread::spawn(move || this.run_loop());
     }
 
+    /// 停止核心（暂停）。以前这里顺手让监督线程 break，结果两点都坏：status 停在
+    /// Running（面板显示「运行中」却连不上通道），而且「启动核心」再也没人执行。
     pub fn stop(&self) {
         self.stop.store(true, Ordering::SeqCst);
         self.kill_child();
     }
 
+    /// 拉起 / 重启核心。会清掉停止标记：不清的话监督线程还在等待分支里出不来。
     pub fn restart(&self) {
+        self.stop.store(false, Ordering::SeqCst);
         self.restart.store(true, Ordering::SeqCst);
+        self.kill_child();
+    }
+
+    /// 外壳退出：核心跟着走，监督线程收摊。正常退出路径都用这个，别用 stop()。
+    pub fn shutdown(&self) {
+        self.quit.store(true, Ordering::SeqCst);
+        self.stop.store(true, Ordering::SeqCst);
         self.kill_child();
     }
 
@@ -145,25 +164,43 @@ impl Supervisor {
     fn run_loop(self: Arc<Self>) {
         let mut failures = 0u32;
         let mut last_failure = Instant::now();
+        // 停在「已停止 / 启动失败」，等用户点启动。旧代码在这两种情况下直接 break，
+        // 线程一退出，「启动核心」就永远没人执行，status 也停在 Running——
+        // 面板于是显示「运行中 · pid XXXX」，而任何操作都回「核心还没连上外壳通道」。
+        let mut waiting = false;
         loop {
-            if self.stop.load(Ordering::SeqCst) {
+            if self.quit.load(Ordering::SeqCst) {
+                self.kill_child();
                 break;
+            }
+            if self.stop.load(Ordering::SeqCst) {
+                self.kill_child();
+                self.mark_stopped(None);
+                if !waiting {
+                    waiting = true;
+                    // 停止是用户动作，不是故障：别把「反复退出」的计数带进下一次启动。
+                    failures = 0;
+                }
+                thread::sleep(WAIT_TICK);
+                continue;
+            }
+            if waiting {
+                waiting = false;
+                failures = 0;
+                last_failure = Instant::now();
             }
             if self.restart.swap(false, Ordering::SeqCst) {
                 failures = 0;
             }
             let reason = self.spawn_once();
-            if self.stop.load(Ordering::SeqCst) {
+            if self.quit.load(Ordering::SeqCst) {
+                self.kill_child();
                 break;
             }
-            {
-                let mut status = self.status.lock().unwrap();
-                status.phase = Phase::Stopped;
-                status.pid = 0;
-                if let Some(reason) = &reason {
-                    status.error = reason.clone();
-                    status.push_line(format!("核心退出：{reason}"));
-                }
+            self.mark_stopped(reason.as_deref());
+            if self.stop.load(Ordering::SeqCst) {
+                // 核心运行期间用户点了停止：下一轮走等待分支，别记成一次失败。
+                continue;
             }
             if Instant::now().duration_since(last_failure) > Duration::from_secs(60) {
                 failures = 0;
@@ -176,9 +213,27 @@ impl Supervisor {
                 if status.error.is_empty() {
                     status.error = "核心反复退出，已停止自动重启".to_string();
                 }
-                break;
+                // 失败也留住线程：用户把问题解决后还能从托盘/面板再启动一次。
+                waiting = true;
+                continue;
             }
             thread::sleep(Duration::from_millis(800));
+        }
+    }
+
+    /// 把状态落到「已停止」。pid 与 url 都是上一个进程的，不清掉面板就会拿着过期
+    /// 数据画「运行中 · pid 1234」和「打开管理页」——这两条正是让人以为核心还活着的根。
+    fn mark_stopped(&self, reason: Option<&str>) {
+        let mut status = self.status.lock().unwrap();
+        status.phase = Phase::Stopped;
+        status.pid = 0;
+        status.url.clear();
+        match reason {
+            Some(reason) => {
+                status.error = reason.to_string();
+                status.push_line(format!("核心退出：{reason}"));
+            }
+            None => status.error.clear(),
         }
     }
 
