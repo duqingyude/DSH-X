@@ -7,10 +7,13 @@ pub fn send(title: &str, body: &str, sound: bool) {
     let mut notification = notify_rust::Notification::new();
     // appname 给 Linux 的分组用；Windows 只认 app_id——不传它就退回 notify-rust 的兜底
     // （PowerShell 的 AUMID），通知会署名「Windows PowerShell」。见 identity.rs。
+    // app_id 在这个版本的 notify-rust 里只有 Windows 后端有（macOS / Linux 没有这个方法），
+    // 写成一条链会让 Linux 与 macOS 编译失败（CI 上踩过）。
     notification
         .summary(title)
-        .appname(env!("DSH_PRODUCT_NAME"))
-        .app_id(env!("DSH_APP_ID"));
+        .appname(env!("DSH_PRODUCT_NAME"));
+    #[cfg(windows)]
+    notification.app_id(env!("DSH_APP_ID"));
     if sound {
         // "Default" 是 Windows 自带的通知音（winrt 的 Sound::from_str 认这几个名字）。
         notification.sound_name("Default");
