@@ -41,17 +41,6 @@ pub enum Phase {
     Failed,
 }
 
-impl Phase {
-    pub fn label(self) -> &'static str {
-        match self {
-            Phase::Idle => "未启动",
-            Phase::Starting => "启动中",
-            Phase::Running => "运行中",
-            Phase::Stopped => "已停止",
-            Phase::Failed => "启动失败",
-        }
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct Status {
@@ -364,10 +353,11 @@ pub fn find_node(prefs: &prefs::Prefs) -> Option<PathBuf> {
             }
         }
     }
-    if prefs.node_runtime == "system" {
-        if let Some(found) = locate(&prefs.system_node_path) {
-            return Some(found);
-        }
+    // node_runtime 是 Electron 时代留下的两种取值（bundled / system），现在只有
+    // 系统 node 一条路：设置里指了路径就直接用，不再看那个开关；指的那份没了
+    // 才继续往下找，别因为一条过期的路径把启动器卡死。
+    if let Some(found) = locate(&prefs.system_node_path) {
+        return Some(found);
     }
     if let Some(found) = which_node() {
         return Some(found);

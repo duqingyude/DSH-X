@@ -2,6 +2,9 @@ import { appendFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  panelAction,
+  panelSettings,
+  panelState,
   setHost,
   shutdown,
   startServer,
@@ -20,7 +23,17 @@ const APP_WINDOW = process.env.DSH_APP_WINDOW === '1'
 // 服务和外壳不再同一个进程（§6）。浏览器模式没有这个变量，走下面原来的路。
 // onShellGone：通道 EOF 说明外壳已经没了，核心立刻收摊——比看门狗轮询快，也让
 // 卸载程序马上能删掉自己的目录。
-const REMOTE_HOST = remoteHostFromEnv(process.env, { log, onShellGone: shellGone })
+/**
+ * 外壳反向调用的处理函数：面板要模型、要起停启动项、要改设置。
+ * 方法名与 docs/shell-panel-plan.md 的契约一一对应；不认识的由 host-remote.js 回
+ * 「核心不认识这个方法」，外壳据此提示核心过旧，而不是静默超时。
+ */
+const PANEL_HANDLERS = {
+  'panel/state': () => panelState(),
+  'panel/action': (params) => panelAction(params ?? {}),
+  'panel/settings': (params) => panelSettings(params ?? {}),
+}
+const REMOTE_HOST = remoteHostFromEnv(process.env, { log, onShellGone: shellGone, handlers: PANEL_HANDLERS })
 const LOG_DIR = APP_DIR
 const LOG = join(LOG_DIR, 'manager.log')
 
@@ -123,6 +136,9 @@ async function main() {
   if (REMOTE_HOST) {
     log(`原生外壳通道：${process.env.DSH_SHELL_IPC}`)
     setHost(REMOTE_HOST)
+    // 通道是懒连接的：不先敲一下，外壳要等核心第一次调用才认得这条连接，
+    // 面板在那之前拉不到模型，还会误报「核心版本过旧」。
+    void REMOTE_HOST.shellUpdate.state()
   }
   try {
     await startServer()

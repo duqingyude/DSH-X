@@ -51,6 +51,8 @@ async function fakeShell(routes = {}, { onConnect, chunked = [], silent = [] } =
         rest = rest.subarray(4 + length)
         const frame = JSON.parse(text)
         seen.push(frame)
+        // 没有 method 的是核心回给我们的帧（外壳反向调用的回包），记下就走，别再回一次。
+        if (typeof frame.method !== 'string') continue
         // silent：故意不回（超时用例）；chunked：分两段回（半包用例）
         if (silent.includes(frame.method)) continue
         const handler = routes[frame.method]
@@ -268,7 +270,11 @@ test('内核连接失败不算外壳死了：没连上过就不叫 onShellGone',
 test('start.js 在 startServer 之前装远程 host，有外壳时不再开浏览器页', () => {
   const start = read('start.js')
   assert.match(start, /import \{ remoteHostFromEnv \} from '\.\/host-remote\.js'/)
-  assert.match(start, /const REMOTE_HOST = remoteHostFromEnv\(process\.env, \{ log, onShellGone: shellGone \}\)/)
+  assert.match(start, /const REMOTE_HOST = remoteHostFromEnv\(process\.env, \{ log, onShellGone: shellGone, handlers: PANEL_HANDLERS \}\)/)
+  // 外壳反向调用只开放这三个方法：面板模型、启动项动作、系统开关。
+  assert.match(start, /'panel\/state': \(\) => panelState\(\)/)
+  assert.match(start, /'panel\/action': \(params\) => panelAction\(params \?\? \{\}\)/)
+  assert.match(start, /'panel\/settings': \(params\) => panelSettings\(params \?\? \{\}\)/)
   // 顺序没法用一条正则兜住（中间隔了几百行），直接按位置比：main() 里 setHost 必须在 startServer 之前，
   // 否则另一个实例双击时打进来的 /api/wake 会落到默认 host 上（那条路在原生外壳里没有接收方）。
   const body = start.slice(start.indexOf('async function main()'))
@@ -280,6 +286,68 @@ test('start.js 在 startServer 之前装远程 host，有外壳时不再开浏�
   assert.match(start, /if \(!REMOTE_HOST\) setHost\(\{ onWake: \(\) => showManager\(\) \}\)/)
   // 通道断了要能收摊：只靠 3 秒看门狗的话，卸载程序会先撞上还占着目录的核心。
   assert.match(start, /function shellGone\(\) \{[\s\S]{0,200}shutdown\(\)\.finally\(\(\) => process\.exit\(0\)\)/)
+})
+
+test('外壳反向调用：核心按 handlers 回包，id 原样带回', async () => {
+  const shell = await fakeShell({ 'desktop/notify': () => ({ ok: true }) })
+  try {
+    const host = createRemoteHost({
+      path: shell.path,
+      handlers: {
+        'panel/state': async () => ({ presets: [{ id: 'a' }] }),
+      },
+    })
+    // 通道是懒连接的：先发一次普通调用把连接建起来（真实运行时是 /api/self 那次刷新），
+    // 之后推送才有地方落。
+    await host.desktop.notify({ title: 't', body: 'b' })
+    assert.equal(host.panel.push({ updatedAt: 1 }), true)
+    await waitFor(() => shell.seen.some((frame) => frame.event === 'panel'))
+    const pushed = shell.seen.find((frame) => frame.event === 'panel')
+    assert.deepEqual(pushed.data, { updatedAt: 1 }, '面板模型走 event 帧，形状与外壳推送一致')
+
+    shell.push({ id: 41, method: 'panel/state', params: {} })
+    await waitFor(() => shell.seen.some((frame) => frame.id === 41))
+    const reply = shell.seen.find((frame) => frame.id === 41)
+    assert.equal(reply.ok, true)
+    assert.deepEqual(reply.result, { presets: [{ id: 'a' }] })
+  } finally {
+    await shell.close()
+  }
+})
+
+test('外壳反向调用：未知方法与抛错都回 ok:false 加一句人话', async () => {
+  const shell = await fakeShell({ 'desktop/notify': () => ({ ok: true }) })
+  try {
+    const host = createRemoteHost({
+      path: shell.path,
+      handlers: {
+        'panel/action': async () => { throw new Error('该启动项正在操作，请稍后再试') },
+      },
+    })
+    await host.desktop.notify({ title: 't', body: 'b' })
+    host.panel.push({})
+    await waitFor(() => shell.seen.length >= 1)
+    shell.push({ id: 51, method: 'panel/nope', params: {} })
+    await waitFor(() => shell.seen.some((frame) => frame.id === 51))
+    const unknown = shell.seen.find((frame) => frame.id === 51)
+    assert.equal(unknown.ok, false)
+    // 这句话外壳直接拿去提示「核心版本过旧」
+    assert.match(unknown.error, /核心不认识这个方法：panel\/nope/)
+
+    shell.push({ id: 52, method: 'panel/action', params: { id: 'a' } })
+    await waitFor(() => shell.seen.some((frame) => frame.id === 52))
+    const failed = shell.seen.find((frame) => frame.id === 52)
+    assert.equal(failed.ok, false)
+    assert.equal(failed.error, '该启动项正在操作，请稍后再试')
+  } finally {
+    await shell.close()
+  }
+})
+
+test('面板推送：没连上时不建连接、也不抛', () => {
+  const host = createRemoteHost({ path: join(tmpdir(), `dsh-x-idle-${process.pid}.sock`), timeout: 200 })
+  // 没连上就没有 socket：push 返回 false，核心照常跑
+  assert.equal(host.panel.push({ updatedAt: 0 }), false)
 })
 
 /** 小轮询：等一个异步副作用出现，比固定 sleep 稳。 */

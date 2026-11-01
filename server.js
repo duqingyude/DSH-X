@@ -299,7 +299,7 @@ const clients = new Set()
 /**
  * 宿主（拉起本服务的外壳）提供的钩子。默认值对应「子进程 + stdout 标记行」那条老路；
  * 原生外壳（shell-rs）不读这些行，而是由 start.js 用 host-remote.js 把每个成员换成
- * 本机 HTTP 调用（POST /host/*），服务端本身不用知道外壳在哪个进程。
+ * 本机通道调用（命名管道帧，见 docs/shell-ipc-plan.md），服务端不关心外壳在哪个进程。
  */
 let host = {
   onWake: async () => {},
@@ -1655,6 +1655,124 @@ async function trayAction(body, startup = {}) {
   }
 }
 
+/**
+ * 面板模型：原生外壳（shell-rs）唯一的数据源。
+ *
+ * 为什么不另写一套：面板与托盘做的是同一件事（按启动项起停），两套模型迟早出现
+ * 「托盘说在跑、面板说没跑」。这里只是把 trayLaunches() 摊平成 egui 好用的形状，
+ * 并剔掉启动项图标的 base64（一帧塞不下，面板用首字母徽标）。
+ * 形状写在 docs/shell-panel-plan.md，改这里要同步 shell-rs/src/model.rs。
+ */
+export function panelState() {
+  const settings = loadSettingsSync()
+  const rows = trayLaunches()
+  const names = new Map(rows.filter((row) => row.proc).map((row) => [row.proc, row.name]))
+  // 端口从就绪地址里抠：实例对象只保证 url，不保证另存一份 port。
+  const portOf = (url) => {
+    const matched = /:(\d+)(?:\/|$)/.exec(String(url || ''))
+    return matched ? Number(matched[1]) : 0
+  }
+  const progress = installProgress
+    ? { kind: 'install', ...installProgress }
+    : pluginProgress
+      ? { kind: 'plugin', ...pluginProgress, name: pluginProgressName, profile: pluginProgressProfile }
+      : null
+  return {
+    core: { version: APP_VERSION, profile: PROFILE_NAME },
+    shell: { version: SHELL_VERSION },
+    node: { path: RUNTIME_NODE, version: nodeVersionOf(RUNTIME_NODE) || process.versions.node },
+    prefs: {
+      // 与外壳 prefs.rs 的读法一致：这几项不是明确 false 就算开。
+      hardwareAcceleration: settings.hardwareAcceleration !== false,
+      autoUpdate: settings.autoUpdate === true,
+      taskNotifications: settings.taskNotifications !== false,
+      notificationSound: settings.notificationSound !== false,
+      closeToTray: settings.closeToTray !== false,
+      keepAwake: settings.keepAwake === true,
+      nodeRuntime: 'system',
+      systemNodePath: RUNTIME_NODE,
+      openMode: OPEN_MODE,
+      theme: THEME,
+      lang: LANG,
+    },
+    presets: rows.map((row) => ({
+      id: row.id,
+      instanceId: row.instanceId,
+      name: row.name,
+      version: row.version,
+      profile: row.profile,
+      port: row.preset?.port || portOf(row.target?.url),
+      status: row.status,
+      url: row.target?.url || '',
+      busy: row.busy,
+      installed: row.installed,
+      targetId: row.target?.id || '',
+    })),
+    instances: instanceList().map((proc) => ({
+      instanceId: instanceTarget(proc).id,
+      name: names.get(proc) || `${proc.profile} · ${proc.version}`,
+      ...instanceInfo(proc),
+    })),
+    progress,
+    failure: publicFailure(lastFailure),
+    updatedAt: Date.now(),
+  }
+}
+
+/**
+ * 面板动作：参数与托盘菜单完全一致（id / action / targetId / instanceId），
+ * 直接转给 trayAction——过期校验、busy 拒绝、安装检查都只有一份实现。
+ */
+export async function panelAction(params = {}) {
+  return await trayAction({
+    id: params.id,
+    action: params.action,
+    targetId: params.targetId,
+    instanceId: params.instanceId,
+  })
+}
+
+/** 面板里能改的键。白名单之外一律丢掉：这条通道不能让外壳改任意设置。 */
+const PANEL_SETTINGS_KEYS = [
+  'taskNotifications', 'notificationSound', 'closeToTray', 'keepAwake', 'autoUpdate', 'lang', 'theme',
+  // Node 路径也能在面板里改：写 settings.json 的活仍由核心干（它要先验一遍能跑）。
+  'systemNodePath',
+]
+
+/**
+ * 面板改设置：走页面同一个 saveManagerSettings()，校验与落盘只有一条路。
+ * 只允许白名单里的键——外壳不该能改数据目录、端口、代理这类东西。
+ */
+export async function panelSettings(params = {}) {
+  const patch = params?.patch
+  if (!patch || typeof patch !== 'object') throw new Error('设置参数不对')
+  const body = {}
+  for (const key of PANEL_SETTINGS_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(patch, key)) body[key] = patch[key]
+  }
+  if (!Object.keys(body).length) throw new Error('没有可改的设置')
+  await saveManagerSettings(body)
+  return { ok: true }
+}
+
+let panelPushTimer = null
+/**
+ * 推面板模型：节流 200ms（一轮安装能触发几十次 emitState），
+ * 外壳没连上时 host.panel 不存在，整段是空操作。
+ */
+function schedulePanelPush() {
+  if (!host.panel || panelPushTimer) return
+  panelPushTimer = setTimeout(() => {
+    panelPushTimer = null
+    try {
+      host.panel.push(panelState())
+    } catch (error) {
+      pushLog('推送面板模型失败：' + (error instanceof Error ? error.message : error))
+    }
+  }, 200)
+  panelPushTimer.unref?.()
+}
+
 let startupGeneration = 0
 
 function assertStartupActive() {
@@ -2011,6 +2129,8 @@ async function saveManagerSettings(body) {
 async function emitState() {
   const snap = await snapshot()
   emit('state', snap)
+  // 原生外壳的面板吃这份模型：状态一变就推，省得它轮询。
+  schedulePanelPush()
 }
 
 /**

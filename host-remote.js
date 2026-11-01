@@ -45,10 +45,11 @@ function frameTo(header, text) {
  * @param {string} path 通道名（Windows 是 \\.\pipe\...，unix 是文件路径）
  * @param {object} options
  * @param {Function} [options.log] 排障日志
- * @param {Function} [options.onEvent] 外壳推来的事件帧（目前只有 shellUpdate）
+ * @param {Function} [options.onEvent] 外壳推来的事件帧（shellUpdate / panel）
+ * @param {Function} [options.onRequest] 外壳发来的请求：同一个套接字，反向调用
  * @param {Function} [options.onGone] 连接建立过又断掉：外壳没了
  */
-export function createIpcTransport(path, { log = () => {}, onEvent = () => {}, onGone = () => {} } = {}) {
+export function createIpcTransport(path, { log = () => {}, onEvent = () => {}, onRequest = null, onGone = () => {} } = {}) {
   let socket = null
   let rest = Buffer.alloc(0)
   let everConnected = false
@@ -79,12 +80,44 @@ export function createIpcTransport(path, { log = () => {}, onEvent = () => {}, o
       onEvent(frame)
       return
     }
+    // 有 method 的是外壳发来的请求（面板要数据、要执行动作），没有的才是回给我们的回帧。
+    // 帧形状不变，只靠这个字段分流：两端同批发布，不引入协议版本号。
+    if (frame && typeof frame.method === 'string') {
+      void answer(frame)
+      return
+    }
     const entry = pending.get(frame?.id)
     if (!entry) return
     pending.delete(frame.id)
     if (entry.timer) clearTimeout(entry.timer)
     if (frame.ok) entry.resolve(frame.result ?? null)
     else entry.reject(new Error(frame.error || '外壳调用失败'))
+  }
+
+  /** 把一帧写进套接字。整帧一次 write：Node 保证 write 之间不交错，帧体不会被别的帧切开。 */
+  function sendFrame(value) {
+    const target = ensure()
+    target.write(frameTo(Buffer.alloc(4), JSON.stringify(value)))
+  }
+
+  /**
+   * 回外壳一个请求。错误只回 message：外壳那边把它当提示文案直接显示，
+   * 带堆栈反而是噪音（真要看细节，核心日志里已经有完整记录）。
+   */
+  async function answer(frame) {
+    const reply = { id: frame.id, ok: true, result: null }
+    try {
+      if (!onRequest) throw new Error('核心没有开放外壳调用')
+      reply.result = await onRequest(String(frame.method), frame.params ?? null)
+    } catch (error) {
+      reply.ok = false
+      reply.error = error instanceof Error ? error.message : String(error)
+    }
+    try {
+      sendFrame(reply)
+    } catch (error) {
+      log('外壳通道回包失败：' + (error?.message || error))
+    }
   }
 
   function onData(chunk) {
@@ -163,7 +196,19 @@ export function createIpcTransport(path, { log = () => {}, onEvent = () => {}, o
     return wasConnected
   }
 
-  return { request, close, get connected() { return everConnected } }
+  /** 主动推一帧事件（面板模型走这里）。没连上就是空操作：外壳不在时推送没有意义。 */
+  function sendEvent(event, data) {
+    if (!socket) return false
+    try {
+      sendFrame({ event, data: data ?? null })
+      return true
+    } catch (error) {
+      log('外壳通道推送失败：' + (error?.message || error))
+      return false
+    }
+  }
+
+  return { request, close, sendEvent, get connected() { return everConnected } }
 }
 
 /**
@@ -173,6 +218,7 @@ export function createIpcTransport(path, { log = () => {}, onEvent = () => {}, o
  * @param {Function} [options.exit]    测试注入用：真退进程由调用方决定
  * @param {Function} [options.onShellGone] 外壳通道断了：外壳已经没了，核心该收摊
  * @param {number} [options.timeout]   普通调用超时
+ * @param {object} [options.handlers]  外壳反向调用的处理函数：方法名 → async (params) => result
  */
 export function createRemoteHost({
   path,
@@ -181,6 +227,7 @@ export function createRemoteHost({
   timeout = DEFAULT_TIMEOUT_MS,
   shellVersion = process.env.DSH_SHELL_VERSION || '',
   onShellGone = () => {},
+  handlers = {},
 } = {}) {
   if (!path) throw new Error('外壳通道名为空（DSH_SHELL_IPC）')
   /** 同步成员的缓存：见文件头第一条约束。 */
@@ -245,9 +292,18 @@ export function createRemoteHost({
     return info
   }
 
+  /** 外壳发来的请求：面板要模型、要起停启动项、要改设置，都从这里进核心。 */
+  async function onRequest(method, params) {
+    const handler = handlers[method]
+    // 旧核心没有这个方法时外壳会看到这句：面板据此提示「核心版本过旧」。
+    if (typeof handler !== 'function') throw new Error('核心不认识这个方法：' + method)
+    return await handler(params)
+  }
+
   const transport = createIpcTransport(path, {
     log,
     onEvent: (frame) => { if (frame.event === 'shellUpdate') ingest(frame.data) },
+    onRequest,
     // EOF 就是外壳死亡信号：比看门狗轮询快，也让卸载程序立刻能删目录。
     onGone: () => onShellGone(),
   })
@@ -290,6 +346,8 @@ export function createRemoteHost({
       clearAll: () => call('browser/clearAll', {}, { fallback: { ok: false, error: '外壳没有回应' } }),
     },
     shellUpdate,
+    /** 面板模型推给外壳：核心状态一变就推，外壳不在时什么都不做。 */
+    panel: { push: (model) => transport.sendEvent('panel', model) },
     onShellUpdateState: (listener) => { if (typeof listener === 'function') listeners.add(listener) },
     /** 测试与收尾用：断开通道（真实运行时由外壳那边的 EOF 触发）。 */
     close: () => transport.close(),
