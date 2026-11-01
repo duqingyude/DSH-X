@@ -41,7 +41,7 @@
       <h1><span class="title-name">DSH-X</span><span class="title-rest" data-zh="让启动更简单。" data-en="Start with ease.">让启动更简单。</span></h1>
       <p class="lead" data-zh="保存常用启动项，同时运行多个环境。版本、插件与整合包，一处管理；打开就是官方原版 DSH Web。" data-en="Save your launch entries and run multiple environments together. Manage versions, plugins and modpacks in one place, then open the original DSH Web UI.">保存常用启动项，同时运行多个环境。版本、插件与整合包，一处管理；打开就是官方原版 DSH Web。</p>
       <!-- 下载按钮：下面五条只是没有 JS / GitHub API 被限流时的兜底，统一指向 releases 页。
-           真实的资产地址由脚本按 cargo-packager 的产物名（dsh-x_<版本>_<架构>-setup.exe 等）覆盖。 -->
+           真实的资产地址由脚本按 cargo-packager 的产物名（Windows/Linux 是 `dsh-x_<版本>_<架构>…`，mac 是 `DSH-X_<版本>_<架构>.dmg`）覆盖。 -->
       <div class="cta">
         <a class="btn btn-go" id="download" href="https://github.com/duqingyude/DSH-X/releases/latest">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 4.2 10.5 3v8.15H2V4.2Zm9.5-1.34L22 1.35v9.8H11.5V2.86ZM2 12.15h8.5V20.3L2 19.1v-6.95Zm9.5 0H22v9.8l-10.5-1.51v-8.29Z"/></svg>
@@ -234,8 +234,9 @@
       .catch(() => {})
     // 一次拿整份 release 列表，三件事一起做：下载次数、版本下拉、给当前平台挑资产。
     // 原来这里请求两次（?per_page=100 数下载量 + /latest 取资产），合成一次省一个 round trip。
-    // cargo-packager 的产物名带版本与架构：dsh-x_<版本>_x64-setup.exe / _aarch64.dmg / _amd64.AppImage / _amd64.deb
-    const INSTALLER = /^dsh-x_.+_x64-setup\.exe$|^dsh-x_.+\.(?:dmg|AppImage|deb)$/
+    // cargo-packager 的产物名带版本与架构：dsh-x_<版本>_x64-setup.exe / DSH-X_<版本>_aarch64.dmg / _x64.dmg / dsh-x_<版本>_x86_64.AppImage / _amd64.deb
+    // exe/AppImage/deb 用包名 dsh-x，dmg 用 product_name DSH-X，两类前缀都要认（见 docs/build-installers-plan.md）
+    const INSTALLER = /^dsh-x_.+_x64-setup\.exe$|^DSH-X_.+\.dmg$|^dsh-x_.+\.(?:AppImage|deb)$/
     const RELEASES_PAGE = "https://github.com/duqingyude/DSH-X/releases/latest"
 
     // 系统默认值：优先 UA-CH 的 platform，其次 navigator.platform；认不出来就当 Windows
@@ -261,8 +262,8 @@
 
     const assetOf = {
       win: (as) => as.find((a) => /^dsh-x_.+_x64-setup\.exe$/.test(a.name)),
-      macArm: (as) => as.find((a) => /^dsh-x_.+_aarch64\.dmg$/.test(a.name)),
-      macX64: (as) => as.find((a) => /^dsh-x_.+_x64\.dmg$/.test(a.name)),
+      macArm: (as) => as.find((a) => /^DSH-X_.+_aarch64\.dmg$/.test(a.name)),
+      macX64: (as) => as.find((a) => /^DSH-X_.+_x64\.dmg$/.test(a.name)),
       appImage: (as) => as.find((a) => /\.AppImage$/.test(a.name)),
       deb: (as) => as.find((a) => /\.deb$/.test(a.name)),
     }

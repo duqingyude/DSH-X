@@ -51,8 +51,8 @@ Download the installer for your platform from [Releases](https://github.com/duqi
 | Platform | Requirements | Installer |
 | --- | --- | --- |
 | Windows | Windows 10 or later, x64 | `dsh-x_<version>_x64-setup.exe` (NSIS, per-user) |
-| macOS | macOS 13 or later | `dsh-x_<version>_aarch64.dmg` (Apple Silicon) / `dsh-x_<version>_x64.dmg` (Intel) |
-| Linux | x64; AppImage needs FUSE | `dsh-x_<version>_amd64.AppImage` / `dsh-x_<version>_amd64.deb` |
+| macOS | macOS 13 or later | `DSH-X_<version>_aarch64.dmg` (Apple Silicon) / `DSH-X_<version>_x64.dmg` (Intel) |
+| Linux | x64; AppImage needs FUSE | `dsh-x_<version>_x86_64.AppImage` / `dsh-x_<version>_amd64.deb` |
 
 ### Windows
 
@@ -70,7 +70,7 @@ Shell auto-update is currently unavailable, while core updates still come from n
 
 ### Linux
 
-Download `dsh-x_<version>_amd64.AppImage`, `chmod +x` it and run it. If FUSE is unavailable, use `./dsh-x_<version>_amd64.AppImage --appimage-extract-and-run`.
+Download `dsh-x_<version>_x86_64.AppImage`, `chmod +x` it and run it. If FUSE is unavailable, use `./dsh-x_<version>_x86_64.AppImage --appimage-extract-and-run`.
 
 On Debian / Ubuntu you can also install the deb: it lands in `/opt/DSH-X`, adds a menu entry and uninstalls with `apt remove dsh-x`, but **the deb build has no shell auto-update** — grab the new installer from the releases page:
 
@@ -86,8 +86,8 @@ The releases page lists a sha256 next to every file — compare it locally:
 
 ```sh
 certutil -hashfile dsh-x_<version>_x64-setup.exe SHA256 # Windows
-shasum -a 256 dsh-x_<version>_aarch64.dmg              # macOS
-sha256sum dsh-x_<version>_amd64.AppImage               # Linux
+shasum -a 256 DSH-X_<version>_aarch64.dmg              # macOS
+sha256sum dsh-x_<version>_x86_64.AppImage              # Linux
 ```
 
 ## Usage
@@ -217,12 +217,12 @@ cargo install cargo-packager --locked
 npm run dist
 ```
 
-Artifacts land in `release/packager/`: an NSIS installer on Windows, a dmg on macOS, AppImage and deb on Linux. cargo-packager builds them and ships the core under `core/`; publishing identity (appId, update source, core package) comes from `fork.json`.
+Artifacts land in `release/packager/`: an NSIS installer on Windows, a dmg on macOS, AppImage and deb on Linux. cargo-packager builds them and ships the core under `core/`; publishing identity (appId, update source, core package) comes from `fork.json`. cargo-packager does not cross-compile and dmg needs macOS, so each platform builds on its own machine (or in CI) — see [docs/build-installers-plan.md](docs/build-installers-plan.md).
 
 Builds also write an SBOM and release manifest for local checking (not uploaded to the release). Check the version and artifacts before publishing:
 
 ```sh
-node scripts/release-manifest.mjs check-tag v0.1.22
+node scripts/release-manifest.mjs check-tag v0.1.24
 node scripts/release-manifest.mjs verify
 ```
 

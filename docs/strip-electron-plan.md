@@ -304,7 +304,7 @@ unix `<APP_DIR>/ipc/shell-<pid>.sock`，目录 0700 / 文件 0600），外壳当
 | 外壳自更新 | **未做**：`updater.rs` 只返回 `status: "disabled"`，核心更新走 npm 不受影响（§8） |
 | mac dmg | `assets/icon.icns` 已由 `make-icons.py` 产出（Pillow 直接写 icns，不依赖 iconutil）；CI 里 mac job 仍保留「没有 icns 就跳过」的保险 |
 | 图标统一 | 一处 master（`assets/icon.png`）出全套：exe / 卸载程序 / 安装包 / 快捷方式 / 托盘 / 面板窗口 / 网页 favicon 都换成同一张 mascot。**Windows 的 exe 图标必须自己编 `.rc`**——cargo-packager 不写资源段，之前装出来的 `dsh-x.exe` 与安装包一直是通用空白窗格；现在 `build.rs` 用 `embed-resource` 嵌 `assets/icon.ico`，编不进去直接 panic |
-| 安装包汉化 | `[nsis] languages = ["SimpChinese"]`（只有一个语言，不弹选择框）；渲染出的脚本里有 `MUI_LANGUAGE "SimpChinese"`、`SimpChinese.nsh` 与 `MUI_LANGDLL_DISPLAY`，安装器窗口标题已是「DSH-X 安装」；卸载程序图标由模板里的 `MUI_UNICON` 一起换掉（`NsisConfig` 没有 `uninstaller_icon` 字段） |
+| 安装包汉化 | `[nsis] languages = ["SimpChinese", "English"]`，模板里的 `DSHX_PICK_LANGUAGE` 宏按系统语言归一（中文系统→简体中文，其余→英文），**不弹语言选择框**（cargo-packager 会传 `display_language_selector=true`，模板故意不插 `MUI_LANGDLL_DISPLAY`）；真机验证过中文欢迎页与强制英文欢迎页两套文案；卸载程序图标由模板里的 `MUI_UNICON` 一起换掉（`NsisConfig` 没有 `uninstaller_icon` 字段） |
 | 看板娘 WebP | 未做（属 P4 的独立小项，与外壳无关） |
 | 三平台 CI | 未真跑过：只有 Windows 的 NSIS 全链路在本机验证 |
 

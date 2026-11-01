@@ -71,9 +71,9 @@ Node 核心 start.js → server.js        管理页后端 + 版本 / 插件 / �
 | `plugins/` `packs/` | 插件源码（发 npm）与随包发的整合包配方（见「关键机制」，**两个目录别合并**） |
 | `skills/` | 给 AI 用的技能源码（随仓库分发，不进安装包）：`dsh-x-selfcheck` 只读自检环境，`node skills/dsh-x-selfcheck/scripts/selfcheck.mjs`，零依赖 |
 | `compat/` `perf/` | 注入 dsh 进程的钩子：兼容修补与加速 |
-| `shell-rs/` | Rust 原生外壳：`main.rs` 单实例与启动、`supervisor.rs` 起停核心、`panel.rs` egui 面板、`tray.rs` 托盘、`bridge.rs` 本机通道（命名管道 / UDS）、`prefs.rs` 设置、`updater.rs` 更新器（目前只返回 `disabled`）；`Cargo.toml` 是外壳版本与 `env!` 注入的 appId/productName |
+| `shell-rs/` | Rust 原生外壳：`main.rs` 单实例与启动、`supervisor.rs` 起停核心、`panel.rs` egui 面板、`tray.rs` 托盘、`bridge.rs` 本机通道（命名管道 / UDS）、`notify.rs` 系统通知、`identity.rs` Windows 应用身份（AUMID 与通知署名）、`prefs.rs` 设置、`updater.rs` 更新器（目前只返回 `disabled`）；`Cargo.toml` 是外壳版本与 `env!` 注入的 appId/productName |
 | `test/` | 用例与假服务器 |
-| `docs/` | GitHub Pages 落地页 + 看板娘设计稿 + `releases/`（入库的发版说明）+ `strip-electron-plan.md`（本次改造的方案与进度） |
+| `docs/` | GitHub Pages 落地页 + 看板娘设计稿 + `releases/`（入库的发版说明）+ `strip-electron-plan.md`（去 Electron 改造的方案与进度）+ `build-installers-plan.md`（三端出包方案） |
 | `assets/` | 图标 master（`icon.png` → `make-icons.py` 出全套） |
 | `data/` `release/` `vendor/` | 运行时数据与产物，gitignored，可重建，**不用整理** |
 
@@ -89,6 +89,15 @@ Node 核心 start.js → server.js        管理页后端 + 版本 / 插件 / �
 - 鉴权不靠 token：连上后比对**对端 pid**（`GetNamedPipeClientProcessId` / `SO_PEERCRED`，mac 的 xucred 没有 pid 时退回文件权限）。排障用 `node scripts/ipc-call.mjs info`（读 `DSH_SHELL_IPC`），没有 curl 可用了；它是个独立进程，外壳得用 `DSH_SHELL_IPC_ALLOW_ANY=1` 起才放行（默认严格）。
 - 核心**不许** import 外壳、外壳**不许** import 核心；两边只认上面的帧契约。
 - 生命周期：通道 EOF 就是外壳死亡信号，`start.js` 立刻关服务退出；`watchShell()` 每 3 秒看一次 `DSH_SHELL_PID` 兜底（通道被安全软件掐断、或外壳卡死不肯关套接字时只有这条还认得出来）。
+
+### 面板、托盘与双向帧（`docs/shell-panel-plan.md`）
+
+- 通道是**双向**的，帧形状不变、靠有没有 `method` 分流：核心 → 外壳的 `{event,data}`（目前 `panel` / `shellUpdate`），外壳 → 核心的 `{id,method,params}` 与回包。反向调用 3 个方法：`panel/state`（整份面板模型）、`panel/action`（起停，参数与托盘一致，60 秒超时）、`panel/settings`（只收白名单键，见 `server.js` 的 `PANEL_SETTINGS_KEYS`）。
+- **设置的唯一写者是核心**：面板点开关不写 `settings.json`，发给核心走页面同一个 `saveManagerSettings()`，核心再推新模型回来；外壳只读 `prefs.rs` 里的 `hardwareAcceleration` 与 `closeToTray`。所以别给面板加「自己存一份开关」的缓存路径。
+- 模型形状是 `server.js` 的 `panelState()` ⇄ `shell-rs/src/model.rs` 一一对应，**改一边必须改另一边**（`test/panel-model.test.mjs` 盯着核心那侧）。核心允许给 `null` 表示「还不知道」，`PanelModel::parse()` 解析前递归删 `null` 再让 `serde(default)` 兜底——不这么做一个 `null` 就让整份模型作废、面板停在上一帧。
+- 窗口藏着时 eframe 只跑 `logic()` 不跑 `ui()`，没人再 `request_repaint_after`，所以往主循环送事件一律走 `bridge.rs` 的 `emit()`（发完 `ui.request_repaint()`）。**别直接 `ctx.events.send`**，否则「托盘点打开面板」要等下一次偶然重绘。
+- 托盘菜单跟着模型重建：`tray.rs` 的 `Tray::sync()` 比一份 `signature`，变了才 `set_menu`；菜单项动作只登记进 `ROSTER`，由面板 `apply_tray()` 统一走 `link.action()`。
+- `DSH_SHELL_IPC_ALLOW_ANY=1` 放开的连接是 `Trust::Debug`：能下指令，但**不许顶替核心当反向通道**（否则 `scripts/ipc-call.mjs` 一接上，面板点按钮就把请求发给它，面板显示「核心还没连上外壳通道」）。
 
 ### 版本、实例与数据
 
@@ -132,6 +141,7 @@ dsh 的环境隔离单位。模板名（web / headless / acp / sdk / …）会�
 - 托盘每 1.5 秒按 mtime 重读并实时应用；`closeToTray` 关窗时藏到托盘而不是退出。
 - `DSH_SHELL_PREFS=1` 由外壳写入，`/api/settings` 的 `shellPrefs` 据此告诉页面外壳认不认这组键。
 - 任务通知：`server.js` 在实例启动失败 / 意外退出时调 `host.notify`；文案、系统通知都在外壳里；**正常启动不发通知**。这个开关只管外壳自己的提醒，插件通知走 `/api/desktop/notify`，由插件自己的开关决定。
+- 通知署名来自 `notify.rs` 的 `app_id(DSH_APP_ID)`：不传它 notify-rust 会退回 PowerShell 的 AUMID，Windows 就把通知算成「Windows PowerShell」（`identity.rs` 开机时注册同名 AUMID 的 `DisplayName` / `IconUri`，否则通知中心里是一串裸 id）。`notificationSound` 决定要不要 `.sound_name("Default")`——不设它 notify-rust 生成的 toast 带 `<audio silent="true"/>`，开着提示音也听不见。
 
 ### 启动行为：默认没有任何窗口
 
@@ -176,8 +186,9 @@ dsh 的环境隔离单位。模板名（web / headless / acp / sdk / …）会�
 - 默认装到 `%LOCALAPPDATA%\Programs\DSH-X`。cargo-packager 的 NSIS 把 currentUser 目录写死成 `%LOCALAPPDATA%\<产物名>` 且没有配置项，所以 `shell-rs/nsis/installer.nsi` 是抄自 cargo-packager 0.11.8 的改版模板（`[nsis] template` 指向它），相对上游只改三处：默认目录加 `Programs`、沿用「上次安装目录」前先确认 `uninstall.exe` 还在（否则装回一个已删掉的旧路径）、卸载递归删目录（上游非递归 + 按字母序，删不掉 `core`）。升级 cargo-packager 要重新比对上游模板，`test/pack-nsis.test.mjs` 盯着这三处。
 - 发布身份全从 `fork.json` 读：appId、productName、updateOwner/Repo、corePackage。**别在别处硬编码**（`test/fork-identity.test.mjs` 会查）。Windows 卸载项键名是 `DSH-X`（DisplayName），不是 appId；旧 Electron 版的卸载项是 GUID 且装在 `%LOCALAPPDATA%\Programs\DSH`。cargo-packager 没有安装钩子，所以**目前只能让用户先手动卸载旧 Electron 版**（README 里写了）；要自动处理得在 `pack-rs.mjs` 里另加一步，别在文档里当成已有。
 - 外壳自更新：`updater.rs` 目前只返回 `status: "disabled"`（未接 cargo-packager-updater）；mac / Linux 也不提供。核心更新照旧走 npm，不受影响。
-- `.github/workflows/build.yml` 三平台并行出包（Windows / Ubuntu / macOS arm64 + x64），Linux job 顺带发跨平台核心 npm 包（`pack-core.mjs --publish`），mac 缺 `assets/icon.icns` 时整段跳过。
-- 安装界面是中文：`shell-rs/Packager.toml` 的 `[nsis] languages = ["SimpChinese"]` 把 MUI 中文语言包插进来（只有一个语言，所以不弹选择框）；要加英文就把 `English` 一并列上。
+- `.github/workflows/build.yml` 三平台并行出包（Windows / Ubuntu / macOS arm64 + x64），Linux job 顺带发跨平台核心 npm 包（`pack-core.mjs --publish`）。mac job 还留着 `if [ -f assets/icon.icns ]` 守卫，但 `assets/icon.icns` 已入库，守卫现在总是通过（可删）。
+- 本机为什么不能一条命令出三端、Docker 里怎么出 Linux 包、三端产物名与失败模式，见 `docs/build-installers-plan.md`。产物名是 cargo-packager 拼的、改不了：exe/deb/AppImage 用包名 `dsh-x_`，dmg 用 `product_name` 的 `DSH-X_`。
+- 安装界面中英双语、**默认跟系统语言走**：`shell-rs/Packager.toml` 的 `[nsis] languages = ["SimpChinese", "English"]` 插两份 MUI 语言包，模板里的 `DSHX_PICK_LANGUAGE` 宏（`.onInit` 与 `un.onInit` 各调一次）把中文系统（2052/1028/3076/4100）归到简体中文、其余归到英文。列出两个语言后 cargo-packager 会传 `display_language_selector=true`，模板**故意不插** `MUI_LANGDLL_DISPLAY`，所以不弹选择框；`test/pack-nsis.test.mjs` 盯着「不弹框 + 两个语言 + 宏调用两次」。
 - 图标只有一份 master（`assets/icon.png`）：`python scripts/make-icons.py` 出 `assets/{icon,dsh,tray}.ico`、`tray.png`、`icon.icns` 与 `public/`、`docs/` 两份 favicon。
   - exe / 快捷方式：「Windows 只认资源段」，所以 `shell-rs/build.rs` 用 `embed-resource` 编 `icon.rc` 把 `assets/icon.ico` 嵌进二进制（cargo-packager 不会做这件事；编不进去就 panic，别让它静默退回通用空白图标）。
   - 安装包 / 卸载程序：`[nsis] installer_icon` + 模板里的 `MUI_ICON` / `MUI_UNICON`。

@@ -51,8 +51,8 @@
 | 平台 | 系统要求 | 安装包 |
 | --- | --- | --- |
 | Windows | Windows 10 及以上，x64 | `dsh-x_<版本>_x64-setup.exe`（NSIS，每用户安装） |
-| macOS | macOS 13 及以上 | `dsh-x_<版本>_aarch64.dmg`（Apple Silicon）/ `dsh-x_<版本>_x64.dmg`（Intel） |
-| Linux | x64；AppImage 依赖 FUSE | `dsh-x_<版本>_amd64.AppImage` / `dsh-x_<版本>_amd64.deb` |
+| macOS | macOS 13 及以上 | `DSH-X_<版本>_aarch64.dmg`（Apple Silicon）/ `DSH-X_<版本>_x64.dmg`（Intel） |
+| Linux | x64；AppImage 依赖 FUSE | `dsh-x_<版本>_x86_64.AppImage` / `dsh-x_<版本>_amd64.deb` |
 
 ### Windows
 
@@ -70,7 +70,7 @@ mac 的外壳自更新暂不提供，核心仍走 npm 更新。安装前请先�
 
 ### Linux
 
-下载 `dsh-x_<版本>_amd64.AppImage`，`chmod +x` 后直接运行；没有 FUSE 时用 `./dsh-x_<版本>_amd64.AppImage --appimage-extract-and-run`。
+下载 `dsh-x_<版本>_x86_64.AppImage`，`chmod +x` 后直接运行；没有 FUSE 时用 `./dsh-x_<版本>_x86_64.AppImage --appimage-extract-and-run`。
 
 Debian / Ubuntu 也可以装 deb（装到 `/opt/DSH-X`、带菜单项、`apt remove dsh-x` 卸干净），但 **deb 版没有外壳自更新**，换版本要去发布页重新下载：
 
@@ -86,8 +86,8 @@ Release 页面每个文件旁边有 sha256，本地对一下即可：
 
 ```sh
 certutil -hashfile dsh-x_<版本>_x64-setup.exe SHA256   # Windows
-shasum -a 256 dsh-x_<版本>_aarch64.dmg                # macOS
-sha256sum dsh-x_<版本>_amd64.AppImage                 # Linux
+shasum -a 256 DSH-X_<版本>_aarch64.dmg                # macOS
+sha256sum dsh-x_<版本>_x86_64.AppImage                # Linux
 ```
 
 ## 使用
@@ -217,12 +217,12 @@ cargo install cargo-packager --locked
 npm run dist
 ```
 
-产物在 `release/packager/`：Windows 出 NSIS 安装包，macOS 出 dmg，Linux 出 AppImage 与 deb。安装包由 cargo-packager 生成，核心目录随包装进 `core/`；发布身份（appId、更新源、核心包名）统一读根目录的 `fork.json`。
+产物在 `release/packager/`：Windows 出 NSIS 安装包，macOS 出 dmg，Linux 出 AppImage 与 deb。安装包由 cargo-packager 生成，核心目录随包装进 `core/`；发布身份（appId、更新源、核心包名）统一读根目录的 `fork.json`。cargo-packager 不交叉编译、dmg 只能 macOS 出，所以三个平台要在各自的机器上打（或者走 CI），细节见 [docs/build-installers-plan.md](docs/build-installers-plan.md)。
 
 发版前检查版本与产物（发布清单与 SBOM 只在本机自查，不上传 Release）：
 
 ```sh
-node scripts/release-manifest.mjs check-tag v0.1.22
+node scripts/release-manifest.mjs check-tag v0.1.24
 node scripts/release-manifest.mjs verify
 ```
 
