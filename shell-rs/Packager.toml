@@ -24,8 +24,21 @@ icons = ["../assets/icon.ico", "../assets/icon.png"]
 resources = [{ src = "../release/rs-stage/core", target = "core" }]
 
 [nsis]
-# 每用户安装：不需要管理员权限，装到 %LOCALAPPDATA%\Programs\DSH-X，与旧 Electron 版同路径（替换关系）。
+# 每用户安装：不需要管理员权限，装到 %LOCALAPPDATA%\Programs\DSH-X。
+# 旧 Electron 版装在 Programs\DSH（不同目录），装新包前要先卸载它，两者不能共存。
 installer_mode = "currentUser"
+# cargo-packager 把 currentUser 的默认目录写死成 %LOCALAPPDATA%\<产物名>，没有配置项能改，
+# 只能换模板。模板是我们抄的一份（nsis/installer.nsi），相对上游改了默认目录、旧目录校验、卸载递归删目录，
+# 另外把 MUI_UNICON 也指向同一个图标（上游只设安装程序的 MUI_ICON）。
+# 路径相对 shell-rs/（pack-rs.mjs 以 shell-rs/ 为工作目录跑 cargo packager）。
+template = "nsis/installer.nsi"
+# 安装界面中文：cargo-packager 默认只插 English，写 SimpChinese 后欢迎页、目录页、完成页、
+# 卸载确认页（以及「程序正在运行」这类提示）全部走 MUI 自带的中文语言包。只有一个语言，
+# 所以不会弹语言选择框。要加英文就把 English 一并列进来。
+languages = ["SimpChinese"]
+# 安装包自己的图标（资源管理器里双击的那个 exe、安装向导左上角、卸载程序）。不写就用 NSIS 的默认图标；
+# 应用图标是嵌进 dsh-x.exe 的资源段（shell-rs/build.rs + icon.rc），cargo-packager 不管那一步。
+installer_icon = "../assets/icon.ico"
 
 [macos]
 # 与 Electron 版一致：只有 ad-hoc 签名（拿不到 Developer ID 的 arm64 包会被 Gatekeeper 判成已损坏），

@@ -42,6 +42,12 @@ function checkPackagerConfig() {
   if (field('identifier') !== FORK.appId) {
     throw new Error(`Packager.toml 的 identifier (${field('identifier')}) 与 fork.json 的 appId (${FORK.appId}) 不一致`)
   }
+  // NSIS 默认安装目录只能靠换模板改（cargo-packager 没有对应配置项），模板丢了就会悄悄
+  // 装回 %LOCALAPPDATA%\DSH-X，打包前先确认它在。
+  const template = (toml.match(/^template = "([^"]+)"/m) || [])[1]
+  if (!template || !existsSync(join(SHELL_DIR, template))) {
+    throw new Error(`Packager.toml 的 nsis template (${template || '缺省'}) 不存在，安装包会退回到默认安装目录`)
+  }
   return version
 }
 
