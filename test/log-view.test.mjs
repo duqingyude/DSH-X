@@ -47,6 +47,16 @@ test('清空同时取消待刷新内容，新日志仍能继续显示', () => {
   assert.equal(box.node.textContent, 'new')
 })
 
+test('页面在没有 log-view.js 时也能初始化：调用点必须带兜底实现', () => {
+  // 单独请求的脚本会被浏览器扩展 / 安全软件拦掉（net::ERR_BLOCKED_BY_CLIENT）。
+  // 以前 index.html 直接 `window.createLogView(node)`，被拦一次就让整页初始化抛错——
+  // 齿轮和列表全部失灵，看着像「安装坏了」。这个用例守住兜底那一行。
+  const page = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8')
+  assert.match(page, /const createLogView = window\.createLogView \|\|/)
+  assert.match(page, /const logView = createLogView\(logEl\)/)
+  assert.doesNotMatch(page, /const logView = window\.createLogView\(/)
+})
+
 test('向上翻日志不跳到底部，已经在底部才自动跟随', () => {
   const box = setup()
   box.node.scrollTop = 100
