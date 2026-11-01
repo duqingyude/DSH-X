@@ -1,0 +1,5 @@
+// Windows 从可执行文件的资源段里取图标：资源管理器、桌面/开始菜单快捷方式、任务栏、
+// 通知区缩略图都读这里，读不到就画系统那枚通用空白窗格。cargo-packager 只负责安装包
+// 与 mac/linux 的图标，不会往 exe 里塞资源，所以这一步得自己编译进去（build.rs）。
+// 路径相对本文件（rc.exe 以 .rc 所在目录为基准）。
+IDI_ICON1 ICON "../assets/icon.ico"

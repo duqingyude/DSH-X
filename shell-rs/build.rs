@@ -29,4 +29,15 @@ fn main() {
     println!("cargo:rerun-if-changed=../fork.json");
     println!("cargo:rerun-if-changed=../package.json");
     println!("cargo:rerun-if-changed=build.rs");
+
+    // exe 的图标只能在这里嵌：Windows 从资源段读它（资源管理器、快捷方式、任务栏、
+    // 「应用和功能」里的条目），cargo-packager 只管安装包和 mac/linux 的图标。
+    // embed-resource 自己判断目标平台，交叉编译到 linux/mac 时整段跳过。
+    println!("cargo:rerun-if-changed=icon.rc");
+    println!("cargo:rerun-if-changed=../assets/icon.ico");
+    // 图标嵌不进去就让构建失败：静默退回系统的通用空白图标比报错更难发现。
+    // 非 Windows 目标下 embed-resource 什么都不做（CompilationResult::NotWindows）。
+    if let Err(err) = embed_resource::compile("icon.rc", embed_resource::NONE).manifest_required() {
+        panic!("exe 图标编译失败（{err:?}）：Windows 需要 MSVC 的 rc.exe，图标在 assets/icon.ico");
+    }
 }

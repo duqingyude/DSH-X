@@ -1,4 +1,4 @@
-"""Generate the launcher's .ico / favicon set from assets/icon.png.
+"""Generate the launcher's .ico / .icns / favicon set from assets/icon.png.
 
 assets/icon.png is the master artwork (512x512, opaque).  Run:
 
@@ -194,10 +194,13 @@ def main():
     write_ico(os.path.join(ASSETS, "dsh.ico"), ICO_SIZES, base, png_size=256)
     write_ico(os.path.join(ASSETS, "icon.ico"), ICO_SIZES, base, png_size=256)
     write_ico(os.path.join(ASSETS, "tray.ico"), TRAY_SIZES, base)
+    # macOS 的 .app / dmg 图标：Pillow 自己就能写 icns（内含 16…1024 各档），不必依赖
+    # macOS 的 iconutil；build.yml 的 mac job 见到这张图才会真打包（否则整段跳过）。
+    base.save(os.path.join(ASSETS, "icon.icns"), format="ICNS")
     for target in (os.path.join(ROOT, "public"), os.path.join(ROOT, "docs")):
         write_ico(os.path.join(target, "favicon.ico"), ICO_SIZES, base, png_size=256)
         fit(FAVICON_PNG, base).save(os.path.join(target, "favicon.png"))
-    for name in ("dsh.ico", "icon.ico", "tray.ico"):
+    for name in ("dsh.ico", "icon.ico", "tray.ico", "icon.icns"):
         print(name, os.path.getsize(os.path.join(ASSETS, name)))
 
 

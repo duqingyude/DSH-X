@@ -114,10 +114,12 @@ pub fn install(ctx: egui::Context) -> Option<Tray> {
     Some(Tray { _icon: tray })
 }
 
-/// 托盘图标用安装包里的应用图标缩出来：多带一份 32px 素材没必要，
-/// 用户换的图标（assets/icon.png 是 master）也能跟着变。
+/// 托盘图标用安装包里那份 64px 的圆角图（assets/tray.png）缩出来。
+/// 换图标只改 scripts/make-icons.py 的 master（assets/icon.png）再跑一遍脚本。
 fn load_icon() -> Option<Icon> {
-    let bytes = include_bytes!("../../assets/icon.png");
+    // 用 tray.png 而不是 icon.png：后者是 512 的方形 master（不透明四角），
+    // 托盘 / 窗口图标要的是切好圆角、带透明边的那一版（scripts/make-icons.py 生成）。
+    let bytes = include_bytes!("../../assets/tray.png");
     let image = image::load_from_memory(bytes).ok()?;
     // 32 是 Windows 托盘在 100% 缩放下要的尺寸；系统会自己再缩放到高 DPI 档。
     let resized = image
